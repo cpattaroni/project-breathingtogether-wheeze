@@ -48,7 +48,7 @@ ps_drop_incomplete <- function(ps, vars = NA, verbose = FALSE) {
   df <- SampleDataframe(ps)
   
   # If no specific variables are specified, use all sample variables in the phyloseq object
-  if (identical(vars, NA)) vars <- phyloseq::sample_variables(ps)
+  if (identical(vars, NA)) vars <- phyloseq::sample_variables(ps)f
   
   # Subset the data.frame to only include the specified sample variables
   df_sub <- df[, vars, drop = FALSE]
@@ -947,14 +947,14 @@ BoxplotMetadataMOFAfactor <- function(MOFArun, factor, parameter, title, palette
     scale_color_manual(values = adjustcolor(palette, alpha = 1)) +
     
     # Add significance labels using a Wilcoxon test and adjust the font size based on the significance level
-    geom_signif(
-      test = 'wilcox.test',
-      comparisons = list(
-        c(levels(as.factor(df.complete$Parameter))[1],levels(as.factor(df.complete$Parameter))[2]),
-        step_increase = 0.2
-      ),
-      map_signif_level = c('***' = 0.001, '**' = 0.01, '*' = 0.05)
-    ) +
+    #geom_signif(
+     # test = 'wilcox.test',
+      #comparisons = list(
+       # c(levels(as.factor(df.complete$Parameter))[1],levels(as.factor(df.complete$Parameter))[2]),
+        #step_increase = 0.2
+     # ),
+      #map_signif_level = c('***' = 0.001, '**' = 0.01, '*' = 0.05)
+    #) +
     
     # Set the plot title and axis labels
     ggtitle(title) +
