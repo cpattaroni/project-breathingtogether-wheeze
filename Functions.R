@@ -1,0 +1,1005 @@
+########################################### MICROBIOME ############################################
+
+# Transform phyloseq object into dataframes
+SampleDataframe <- function(phylo) {return(as(sample_data(phylo), 'data.frame'))}
+OTUDataframe <- function(phylo) {return(as.matrix(data.frame(otu_table(phylo))))}
+
+
+# Add ASV name based on the highest taxonomic class 
+highest_taxClass <- function (x) {
+  y <- ifelse(is.na(x$Species), # Check if the Species column is empty
+              ifelse(is.na(x$Genus), # If yes, check if the Genus column is empty
+                     ifelse(is.na(x$Family), # If yes, check if the Family column is empty
+                            ifelse(is.na(x$Order), # If yes, check if the Order column is empty
+                                   ifelse(is.na(x$Class), # If yes, check if the Class column is empty
+                                          ifelse(is.na(x$Phylum), # If yes, check if the Phylum column is empty
+                                                 paste0(x$Kingdom, '_', c(1:dim(x)[1])), # If yes, assign the Kingdom to the row
+                                                 paste0(x$Phylum, '_', c(1:dim(x)[1])) ), # If not, assign the Phylum to the row
+                                          paste0(x$Class, '_', c(1:dim(x)[1])) ), # If not, assign the Class to the row
+                                   paste0(x$Order, '_', c(1:dim(x)[1])) ), # If not, assign the Order to the row
+                            paste0(x$Family, '_', c(1:dim(x)[1])) ), # If not, assign the Family to the row
+                     paste0(x$Genus, '_', c(1:dim(x)[1])) ), # If not, assign the Genus to the row
+              paste0(x$Genus, '_', x$Species, '_', c(1:dim(x)[1])) ) # If Species is not empty, assign Genus_Species to the row
+  return(y)
+}
+
+# Add taxonomy after tip_glom
+addtaxonomyafteraggregation <- function(phylo) {
+  # Convert tax_table to data frame and add ASV column
+  taxtab <- as.data.frame(tax_table(phylo))
+  taxtab$ASV <- rownames(taxtab)
+  
+  # Loop through each row and extract genus and species information from ASV column
+  for (i in 1:nrow(taxtab)) {
+    if (str_count(taxtab$ASV[i], "_") == 2) {
+      taxtab$Genus[i] <- str_split(taxtab$ASV, "_")[[i]][1]
+      taxtab$Species[i] <- str_split(taxtab$ASV, "_")[[i]][2]
+    }
+  }
+  
+  # Update the tax_table in the phylo object with the new taxonomy information
+  tax_table(phylo) <- tax_table(as.matrix(taxtab))
+  return(phylo)
+}
+
+# Drop samples with incomplete metadata
+ps_drop_incomplete <- function(ps, vars = NA, verbose = FALSE) {
+  # Convert phyloseq object to data.frame
+  df <- SampleDataframe(ps)
+  
+  # If no specific variables are specified, use all sample variables in the phyloseq object
+  if (identical(vars, NA)) vars <- phyloseq::sample_variables(ps)
+  
+  # Subset the data.frame to only include the specified sample variables
+  df_sub <- df[, vars, drop = FALSE]
+  
+  # Remove rows (samples) with missing data
+  df_sub <- df_sub[stats::complete.cases(df_sub), , drop = FALSE]
+  
+  # If verbose is not set to FALSE, print a message indicating the number of samples with missing data
+  if (!isFALSE(verbose)) {
+    incomplete <- nrow(df) - nrow(df_sub)
+    if (incomplete > 0 || identical(verbose, "max")) {
+      message("Dropping samples with missings: ", incomplete)
+    }
+  }
+  
+  # If verbose is set to "max", print a message indicating the number of missing values for each variable
+  if (identical(verbose, "max")) {
+    for (v in vars) {
+      n_missings <- sum(is.na(df[[v]]))
+      if (n_missings > 0) message(v, " has NAs: ", n_missings)
+    }
+  }
+  
+  # Get the names of the samples to keep (those without missing data)
+  keepers <- rownames(df_sub)
+  
+  # Subset the phyloseq object to only include the samples without missing data
+  phyloseq::prune_samples(samples = keepers, x = ps)
+}
+
+# Transform date into "hot/cold" months
+TimeOfYear <- function(datevector) {
+  months <- month(as.Date(datevector))
+  season <- ifelse(months >= 5 & months <= 10, 'Warm', 'Cold')
+  return(season)
+}
+
+# Plot contaminants
+PlotContaminants <- function(phylo, contam, title) {
+  # Transform the sample counts by setting any abundance greater than 0 to 1
+  pa <- transform_sample_counts(phylo, function(abund) 1 * (abund > 0))
+  
+  # Subset the resulting object into two phyloseq objects: pa_neg containing negative control samples and pa_pos containing all other samples.
+  pa_neg <- prune_samples(sample_data(pa)$NegCtrl == TRUE, pa)
+  pa_pos <- prune_samples(sample_data(pa)$NegCtrl == FALSE, pa)
+  
+  # Create a data frame df_pa that contains the sum of taxonomic abundances for each sample type (positive and negative controls) and contaminant.
+  df_pa <- data.frame(pa_pos = taxa_sums(pa_pos), pa_neg = taxa_sums(pa_neg), contaminant = contam$contaminant)
+  
+  # Create a scatter plot using the ggplot2 package.
+  contam_plot <- ggplot(df_pa, aes(x = pa_neg, y = pa_pos, col = contaminant, fill = contaminant)) +
+    # Add points to the plot
+    geom_point(size = 2, shape = 21, position = position_dodge2(0.2), stroke = 0.25) +
+    # Set the title and axis labels
+    labs(title = title,
+         x = 'Prevalence in negative controls (Swab, extraction and PCR)',
+         y = 'Prevalence in samples') +
+    # Set the fill colors for the contaminants
+    scale_fill_manual(values = adjustcolor(c('darkseagreen', 'indianred'), 0.5)) +
+    # Set the point colors for the contaminants
+    scale_color_manual(values = adjustcolor(c('darkseagreen', 'indianred'), 1)) +
+    # Remove the legend
+    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12))
+  
+  # Return the ggplot object containing the contaminant plot
+  return(contam_plot)
+}
+
+# Boxplots for metadata
+BoxplotMetadataGroup <- function(phylo, parameter, title, yaxis, palette) {
+  # Drop samples with missing data for the specified parameter
+  phylo <- ps_drop_incomplete(phylo, parameter)
+  # Convert to a SampleDataframe
+  df <- SampleDataframe(phylo)
+  # Find the maximum value of the parameter for setting the y-axis limit
+  max <- max(as.numeric(df[, parameter]))
+  
+  # Create the plot using ggplot2
+  plot <- ggplot(df, aes(x=Group, y=as.numeric(df[, parameter]))) +
+    # Add the boxplot (white fill with colored outline)
+    geom_boxplot(aes(group=Group), width=0.5, outlier.shape=NA, col=adjustcolor(palette, alpha=1), fill=adjustcolor('white', alpha=1)) +
+    # Add the boxplot with transparent fill
+    geom_boxplot(aes(group=Group), width=0.5, outlier.shape=NA, col=adjustcolor(palette, alpha=1), fill=adjustcolor(palette, alpha=0.25)) +
+    # Add individual points (colored by group)
+    geom_point(aes(y=as.numeric(df[, parameter]), fill=Group, color=Group),
+               size=2, shape=21, position=position_dodge2(0.2), stroke=0.25) +
+    # Set the fill and color scales
+    scale_fill_manual(values=adjustcolor(palette, alpha=0.5)) +
+    scale_color_manual(values=adjustcolor(palette, alpha=1)) +
+    # Add significance bars between groups
+    geom_signif(comparisons=list(c('Yes', 'No'), step_increase=0.2), map_signif_level=c('***'=0.001, '**'=0.01, '*'=0.05)) +
+    # Set the x-axis labels
+    scale_x_discrete(labels=c(paste0('Controls', '\n', 'n = ', table(df$Group)[1]), paste0('Wheezers', '\n', 'n = ', table(df$Group)[2]))) +
+    # Set the plot title and axis labels
+    ggtitle(title) + xlab('') + ylab(title) + ylab(yaxis) +
+    # Remove the legend and set the y-axis limit
+    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)) + ylim(0, (max + max * 0.1))
+  
+  return(plot)
+}
+
+# Boxplots for metadata
+BoxplotMetadataParameters <- function(phylo, parameter.num, parameter.bin, title, yaxis, palette, paletteboxplot, labels){
+  # Drop incomplete rows for binary parameter
+  phylo <- ps_drop_incomplete(phylo, parameter.bin)
+  
+  # Create data frame from phyloseq object
+  df <- SampleDataframe(phylo)
+  
+  # Convert numeric parameter to numeric type and binary parameter to factor type
+  df$parameter.num <- as.numeric(df[, parameter.num])
+  df$parameter.bin <- as.factor(df[, parameter.bin])
+  
+  # Get maximum value for numeric parameter for ylim
+  max <- max(df$parameter.num)
+  
+  # Create plot with ggplot
+  plot <- ggplot(df, aes(x = parameter.bin, y = parameter.num)) +
+    # Add boxplots
+    geom_boxplot(width = 0.5, outlier.shape = NA, col = adjustcolor(paletteboxplot, alpha = 1),
+                 fill = adjustcolor('white', alpha = 1)) +
+    geom_boxplot(width = 0.5, outlier.shape = NA, col = adjustcolor(paletteboxplot, alpha = 0.25),
+                 fill = adjustcolor(paletteboxplot, alpha = 0.1)) +
+    # Add points with jitter and fill/color by group
+    geom_point(aes(x = parameter.bin, y = parameter.num, color = Group, fill = Group),
+               size = 2, shape = 21, position = position_jitter(0.1), stroke = 0.25) +
+    # Add color and fill scales
+    scale_fill_manual(values = adjustcolor(palette, alpha = 0.5)) +
+    scale_color_manual(values = adjustcolor(palette, alpha = 1)) +
+    # Add significance bars
+    geom_signif(comparisons = list(c(levels(df$parameter.bin)[1], levels(df$parameter.bin)[2]), step_increase = 0.2),
+                map_signif_level = c('***' = 0.001, '**' = 0.01, '*' = 0.05)) +
+    # Add plot labels and formatting
+    ggtitle(title) + xlab('') + ylab(title) + ylab(yaxis) + theme(legend.position = 'none') +
+    scale_x_discrete(labels = c(paste0(levels(df$parameter.bin)[1], '\n', 'n = ', table(df$parameter.bin)[1]),
+                                paste0(levels(df$parameter.bin)[2], '\n', 'n = ', table(df$parameter.bin)[2]))) +
+    ylim(0, (max + max * 0.1)) + theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12))
+  
+  return(plot)
+}
+
+# Plots for continuous metadata
+BoxplotMetadataContinuous <- function(phylo, parameter1, parameter2, title, xaxis, yaxis, palette, collm) {
+  
+  # Remove incomplete rows from the input data based on two specified parameters
+  phylo <- ps_drop_incomplete(phylo, parameter1)
+  phylo <- ps_drop_incomplete(phylo, parameter2)
+  
+  # Convert input data into a data frame for plotting
+  df <- SampleDataframe(phylo)
+  
+  # Convert the two specified parameters from strings to numeric values
+  df$parameter1 <- as.numeric(df[, parameter1])
+  df$parameter2 <- as.numeric(df[, parameter2])
+  
+  # Create a scatter plot with color-coded points and a regression line
+  plot <- ggplot(df, aes(x=parameter1, y=parameter2)) +
+    geom_point(aes(fill=Group, color=Group), size=2, shape=21, position=position_jitter(width=0.1, height=0), stroke=0.25) +
+    geom_smooth(method='lm', level=0.8, col='grey') +
+    scale_fill_manual(values=adjustcolor(palette, alpha=0.5))  +
+    scale_color_manual(values=adjustcolor(palette, alpha=1)) +
+    
+    # Set the plot's title, x and y labels, and remove the legend
+    ggtitle(title) + xlab(xaxis) + ylab(yaxis) +
+    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12))
+  
+  # Return the completed plot
+  return(plot)
+}
+
+# Age plots for metadata
+BoxplotMetadataAge <- function(phylo, parameter, title, xaxis, yaxis, palette) {
+  # Drop incomplete rows based on the given parameter
+  phylo <- ps_drop_incomplete(phylo, parameter)
+  
+  # Convert data to a sample dataframe
+  df <- SampleDataframe(phylo)
+  
+  # Remove unused factor levels from the dataframe
+  df <- droplevels(df)
+  Medians <- data.frame(Median=c(median(df[df$TimepointSimplified == 0, parameter]), median(df[df$TimepointSimplified == 3, parameter]),
+                                 median(df[df$TimepointSimplified == 6, parameter]), median(df[df$TimepointSimplified == 12, parameter])),
+                        TimePoint=c(0, 3, 6, 12))
+  # Create the plot with ggplot2
+  plot <- ggplot(df, aes(x = TimepointSimplified, y = as.numeric(df[, parameter]))) +
+    geom_line(data=Medians, aes(x = TimePoint, y = Median), color = adjustcolor(palette, alpha = 0.5), size = 18) +
+    geom_boxplot(aes(group = as.factor(TimepointSimplified)), fill = "white", color = "white", width = 2, outlier.shape = NA) +
+    geom_boxplot(aes(group = as.factor(TimepointSimplified), fill = as.factor(TimepointSimplified), color = as.factor(TimepointSimplified)), width = 2, outlier.shape = NA) +
+    # Add points for each group with jitter
+    geom_point(aes(fill = as.factor(TimepointSimplified), color = as.factor(TimepointSimplified)), size = 2, shape = 21, stroke = 0.25,
+               position = position_jitterdodge(jitter.width = 2, jitter.height = 0.02)) +
+    # Set the fill and color scales with the given color palette
+    scale_fill_manual(values = adjustcolor(palette, alpha = 0.5))  +
+    scale_color_manual(values = adjustcolor(palette, alpha = 1)) +
+    # Set the x-axis breaks to show the time points
+    scale_x_continuous(breaks = c(0, 3, 6, 9, 12, 15)) +
+    ylim(c(0, max(as.numeric(df[, parameter])+as.numeric(df[, parameter])*0.1))) +
+    # Add the title, x-axis label, and y-axis label
+    ggtitle(title) + xlab(xaxis) + ylab(yaxis) +
+    # Add a text annotation with the sample sizes for each group
+    annotate('text', x = max(df$TimepointMonth) - 2, y = min(as.numeric(df[, parameter])),
+             label = paste0('1 week n = ', table(df$TimepointSimplified)[1], '\n', 
+                            '3 months n = ', table(df$TimepointSimplified)[2], '\n',
+                            '6 months n = ', table(df$TimepointSimplified)[3], '\n',
+                            '12 months n = ', table(df$TimepointSimplified)[4])) +
+    # Remove the legend
+    theme(legend.position = "none", text=element_text(size=12))
+  
+  # Return the plot
+  return(plot)
+}
+
+# Ordination plots
+PlotOrdinationGroupUnifrac <- function(phylo, title, palette){
+  # Load required package
+  library(colorspace)
+  
+  # Perform PCoA analysis on weighted UniFrac distance
+  ordi <- ordinate(phylo, 'PCoA', 'wunifrac')
+  
+  # Add PCoA1 and PCoA2 coordinates to sample data
+  sample_data(phylo)$PCoA1 <- ordi$vectors[,1]
+  sample_data(phylo)$PCoA2 <- ordi$vectors[,2]
+  
+  # Convert phyloseq object to a dataframe for plotting
+  phylo <- SampleDataframe(phylo)
+  
+  # Generate axis labels with percentage of variation explained
+  axisx <- paste0('PCoA1 ',round(ordi$values$Relative_eig*100)[1],'%')
+  axisy <- paste0('PCoA1 ',round(ordi$values$Relative_eig*100)[2],'%')
+  
+  # Create the plot
+  plot <- ggplot(phylo, aes(x=PCoA1, y=PCoA2)) +
+    # Add ellipses for each group with transparency
+    stat_ellipse(aes(fill=Group), geom='polygon', alpha=0.2, type='t', level=0.8) + 
+    scale_shape_identity() +
+    # Add density distributions for each group in the x and y directions
+    geom_xsidedensity(aes(y=after_stat(density), color=Group, fill=Group), size=0.25) +
+    geom_ysidedensity(aes(x=after_stat(density), color=Group, fill=Group), size=0.25) +
+    # Add points for each sample with color and fill based on group
+    geom_point(aes(color=Group, fill=Group), shape=21, size=2, stroke=0.25) +
+    # Manually set colors and fills for each group
+    scale_color_manual(values=adjustcolor(palette, alpha=1)) +
+    scale_fill_manual(values=adjustcolor(palette, alpha=0.5)) + 
+    # Position the legend at the bottom of the plot
+    theme(legend.position='bottom') +
+    # Add a text box in the lower left corner with the number of samples in each group
+    annotate('text', x=min(phylo$PCoA1), y=min(phylo$PCoA2), 
+             label=paste0('Controls n = ', table(phylo$Group)[1], '\n', 'Wheezers n = ', table(phylo$Group)[2])) +
+    # Add axis labels and title
+    xlab(axisx) + ylab(axisy) + ggtitle(title) +
+    # Remove axis ticks and tick labels
+    theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(),
+          legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12))
+  
+  return(plot)
+}
+
+# Ordination age
+PlotOrdinationAge <- function(phylo, title, palette){
+  
+  # Perform ordination analysis and add the PCoA scores to the sample metadata
+  ordi <- ordinate(phylo, 'PCoA', 'wunifrac')
+  sample_data(phylo)$PCoA1 <- ordi$vectors[,1]
+  sample_data(phylo)$PCoA2 <- ordi$vectors[,2]
+  phylo <- SampleDataframe(phylo)
+  
+  # Define axis labels using the relative eigenvalues of the PCoA
+  axisx <- paste0('PCoA1 ',round(ordi$values$Relative_eig*100)[1],'%')
+  axisy <- paste0('PCoA1 ',round(ordi$values$Relative_eig*100)[2],'%')
+  
+  # Create the plot using ggplot2
+  plot <- ggplot(phylo, aes(x=PCoA1, y=PCoA2)) +
+    
+    # Add x and y side densities, filled by timepoint and colored by timepoint
+    geom_xsidedensity(aes(y=after_stat(density), fill=Timepoint, color=Timepoint), size=0.25) +
+    geom_ysidedensity(aes(x=after_stat(density), fill=Timepoint, color=Timepoint), size=0.25) +
+    
+    # Add confidence ellipses, filled by timepoint and alpha=0.2
+    stat_ellipse(aes(fill=Timepoint), geom='polygon', alpha=0.2, type='t', level=0.75) + scale_shape_identity() +
+    
+    # Add points filled and colored by timepoint, with size=2 and stroke=0.25
+    #geom_point(aes(fill=Timepoint, color=Timepoint), shape=ifelse(phylo$Group=='Yes' & phylo$TimepointFactor=='T4-1year', 25, 21), size=2, stroke=0.25) + 
+    geom_point(aes(fill=Timepoint, color=Timepoint), size=2, shape=21, stroke=0.25) +
+    
+    # Define color and fill scales using the palette argument
+    scale_color_manual(values=adjustcolor(palette, alpha=1)) +
+    scale_fill_manual(values=adjustcolor(palette, alpha=0.5)) + 
+    
+    # Define the legend position and axis labels
+    theme(legend.position='bottom') +
+    xlab(axisx) + ylab(axisy) + ggtitle(title) +
+    
+    # Define theme elements such as panel scale and axis ticks
+    theme(ggside.panel.scale = 1/4, axis.text.x=element_blank(), 
+          axis.text.y=element_blank(), axis.ticks=element_blank(), legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12))
+  
+  # Return the plot object
+  return(plot)
+}
+
+# Plot distance transitions
+PlotUnifracTimepoint <- function(phylo, title) {
+  
+  # Extract sample data and keep longitudinal samples with more than 2 timepoints
+  samples.data <- SampleDataframe(phylo)
+  keep.longitudinal <- names(which(rowSums(table(samples.data$Patient, samples.data$TimepointFactor)) > 2))
+  phylo <- prune_samples(sample_data(phylo)$Patient %in% keep.longitudinal, phylo)
+  
+  # Calculate distance matrix and prepare sample data for plotting
+  distance.matrix <- as.matrix(phyloseq::distance(phylo, 'wunifrac'))
+  samples.data <- SampleDataframe(phylo)
+  samples.data$barcode <- rownames(samples.data)
+  
+  # Create a data frame to store the pairwise distances between time points
+  transition.df <- data.frame(
+    'T1:1week-3months' = rep(NA, length(keep.longitudinal)),
+    'T2:3months-6months' = rep(NA, length(keep.longitudinal)),
+    'T3:6months-1year' = rep(NA, length(keep.longitudinal))
+  )
+  
+  # Add patient IDs and group information to the transition data frame
+  transition.df$Patient <- keep.longitudinal
+  transition.df$Group <- ifelse(
+    keep.longitudinal %in% samples.data[samples.data$Group == 'Yes',]$Patient == TRUE,
+    'Yes',
+    'No'
+  )
+  
+  # Loop through all longitudinal samples and calculate pairwise distances
+  for (i in 1:length(keep.longitudinal)) {
+    T1 <- samples.data$barcode[which(samples.data$Patient == keep.longitudinal[i] & samples.data$TimepointFactor == 'T1-1week')]
+    T2 <- samples.data$barcode[which(samples.data$Patient == keep.longitudinal[i] & samples.data$TimepointFactor == 'T2-3months')]
+    T3 <- samples.data$barcode[which(samples.data$Patient == keep.longitudinal[i] & samples.data$TimepointFactor == 'T3-6months')]
+    T4 <- samples.data$barcode[which(samples.data$Patient == keep.longitudinal[i] & samples.data$TimepointFactor == 'T4-1year')]
+    transition.df$T1.1week.3months[i] <- ifelse(
+      c(T1,T2) %in% colnames(distance.matrix),
+      distance.matrix[T1,T2],
+      NA
+    )
+    transition.df$T2.3months.6months[i] <- ifelse(
+      c(T2,T3) %in% colnames(distance.matrix),
+      distance.matrix[T2,T3],
+      NA
+    )
+    transition.df$T3.6months.1year[i] <- ifelse(
+      c(T3,T4) %in% colnames(distance.matrix),
+      distance.matrix[T3,T4],
+      NA
+    )
+  }
+  
+  # Melt the transition data frame to long format for plotting
+  transition.melt <- melt(transition.df)
+  
+  # Remove missing values from the data frame
+  transition.melt <- transition.melt[!is.na(transition.melt$value),]
+  
+  # PLot
+  plot <- ggplot(transition.melt, aes(x=variable, y=value, fill=variable, color=variable)) +
+    geom_boxplot(aes(group = variable), fill = "white", color = "white", width = 0.5, outlier.shape = NA) +
+    geom_boxplot(aes(group = variable), width = 0.5, outlier.shape = NA) +
+    geom_point(size = 2, shape = 21, stroke = 0.25, position = position_jitterdodge(jitter.width = 0.5, jitter.height = 0)) +
+    scale_fill_manual(values=adjustcolor(custom_palette_age, alpha=0.5)) +
+    scale_color_manual(values=adjustcolor(custom_palette_age, alpha=1)) +
+    geom_signif(comparisons=list(c('T1.1week.3months','T2.3months.6months')),
+                map_signif_level=c('***'=0.001, '**'=0.01, '*'=0.05), 
+                col='black') +
+    scale_x_discrete(labels=c(paste0('1 week - 3 months', '\n', 'n = ', table(transition.melt$variable)[1]),
+                              paste0('3 months - 6 months', '\n', 'n = ', table(transition.melt$variable)[2]),
+                              paste0('6 months - 1 year', '\n', 'n = ', table(transition.melt$variable)[3]))) +
+    ylim(0,(max(transition.melt$value)+max(transition.melt$value)*0.1)) +
+    ggtitle(title) + xlab('') + ylab('Δ distance between pairs (wunifrac)') + theme(legend.position='none', text=element_text(size=12))
+  
+  # Return plot
+  return(plot)}
+
+# ANOSIM
+ANOSIMunifrac <- function(phylo, design) {
+  
+  # Set the random seed to 2
+  set.seed(2)
+  
+  # Set the distance metric to 'wunifrac'
+  distance <- 'wunifrac'
+  
+  # Perform an ANOSIM test using the specified design and distance metric
+  test <- adonis2(formula = as.formula(paste('phyloseq::distance(phylo, method = distance) ~', design)),
+                  data = as.data.frame(as.matrix(sample_data(phylo))), 
+                  distance = distance, dfun = vegdist, na.action = na.omit)
+  
+  # Return the test results
+  return(test)
+}
+
+# DA testing with LINDA
+DAtesting <- function(phylo, variables, model, level) {
+  
+  # Remove samples with missing data in the specified parameter
+  phylo <- ps_drop_incomplete(phylo, variables)
+  
+  # Convert phyloseq object to meco object
+  meco <- phyloseq2meco(phylo)
+  
+  # Tidy the taxonomic table
+  meco$tax_table <- tidy_taxonomy(meco$tax_table)
+  
+  # Perform classification using the LINDA method
+  meco <- trans_diff$new(dataset = meco, method = 'linda', group = model, taxa_level = level)
+  
+  # Return the results of classification as a data frame
+  return(meco)
+}
+
+mecoAbundance <- function(phylo, variable, level, input_features) {
+  
+  # Remove samples with missing data in the specified parameter
+  phylo <- ps_drop_incomplete(phylo, variable)
+  
+  # Convert phyloseq object to meco object
+  meco <- phyloseq2meco(phylo)
+  
+  # Tidy the taxonomic table
+  meco$tax_table <- tidy_taxonomy(meco$tax_table)
+  
+  # Perform classification using the LINDA method
+  meco <- trans_abund$new(dataset = meco, groupmean = variable, taxrank = level, input_taxaname = input_features)
+  
+  # Return the results of classification as a data frame
+  return(meco)
+}
+
+# Top features
+DAtestingToptaxa <- function(meco, comparison, number_features) {
+  
+  # Filter the dataframe based on the predefined comparison and significance criteria
+  df <- as.data.frame(meco$res_diff)
+  filtered_df <- df[df$Comparison == comparison & df$Significance != "ns",]
+  filtered_df <- filtered_df[order(filtered_df$P.adj), ]  # Sort by smallest P.adj
+  
+  # Select the top number_features
+  filtered_df <- filtered_df[1:number_features, ]
+  filtered_df$Taxa <- gsub(".*\\|a__", "", filtered_df$Taxa)
+  return(filtered_df$Taxa)}
+
+# DA testing: LINDA barplot
+DAtestingPlotBar <- function(meco, comparison, palette, number_features, title) {
+  
+  # Filter the dataframe based on the predefined comparison and significance criteria
+  df <- as.data.frame(meco$res_diff)
+  filtered_df <- df[df$Comparison == comparison & df$Significance != "ns",]
+  filtered_df <- filtered_df[order(filtered_df$P.adj), ]  # Sort by smallest P.adj
+  
+  # Select the top number_features
+  filtered_df <- filtered_df[1:number_features, ]
+  
+  # Calculate transparency based on log10 of P.adj
+  filtered_df$Transparency <- scales::rescale((1/log10(filtered_df$P.adj)), c(0.8, 0.9))
+  
+  # Reorder based on log2FoldChange
+  filtered_df <- filtered_df[order(filtered_df$log2FoldChange),]
+  
+  # Add direction
+  filtered_df$Direction <- ifelse(filtered_df$log2FoldChange<0, strsplit(comparison, " - ")[[1]][2], strsplit(comparison, " - ")[[1]][1])
+  
+  # Rename taxa
+  filtered_df$Taxa <- gsub(".*\\|a__", "", filtered_df$Taxa)
+  
+  # Create the barplot
+  p <- ggplot(filtered_df, aes(x = factor(Taxa, levels = unique(filtered_df$Taxa)), y = log2FoldChange, 
+                               color = Direction, fill = Direction, alpha = Transparency)) +
+    geom_bar(stat = "identity") +
+    scale_fill_manual(values = palette) +
+    scale_color_manual(values = palette) +
+    coord_flip() +
+    labs(x = "ASV", y = "log2 Fold Change") +
+    ggtitle(title) +
+    theme(legend.position = c(1,0),
+          legend.box.background = element_rect(), 
+          text = element_text(size = 12),
+          legend.title = element_blank(),
+          legend.text = element_text(size = 10),
+          legend.key.size = unit(0.5, "cm")) +
+    guides(alpha = "none")
+  return(p)
+}
+
+
+
+# Record rf number of DA features
+DAfeaturesRf <- function(phylo, paramlist, typeoflist = c('classification', 'regression'), level = 'ASV') {
+  # Create a data frame to store the number of DA features
+  df <- data.frame(nbDAfeatures = rep(NA, length(paramlist)))
+  
+  # Loop through each parameter in the paramlist
+  for (i in 1:length(paramlist)) {
+    # If the parameter is for classification
+    if (typeoflist[i] == 'classification') {
+      # Try running the DArf_classification function with the parameter
+      t <- try(DArf_classification(phylo, paramlist[i], level))
+      # If there is an error, set the number of DA features to 0
+      if ('try-error' %in% class(t)) {
+        df[i, ] <- 0
+      } else {
+        # If there is no error, run the DArf_classification function with the parameter and store the number of DA features
+        rf <- DArf_classification(phylo, paramlist[i], level)
+        df[i, ] <- nrow(rf)
+      }
+    }
+    
+    # If the parameter is for regression
+    if (typeoflist[i] == 'regression') {
+      # Try running the DArf_regression function with the parameter
+      t <- try(DArf_regression(phylo, paramlist[i], level))
+      # If there is an error, set the number of DA features to 0
+      if ('try-error' %in% class(t)) {
+        df[i, ] <- 0
+      } else {
+        # If there is no error, run the DArf_regression function with the parameter and store the number of DA features
+        rf <- DArf_regression(phylo, paramlist[i], level)
+        df[i, ] <- nrow(rf)
+      }
+    }
+  }
+  
+  # Add the parameter list as a column to the data frame
+  df$Covariate <- paramlist
+  
+  # Return the data frame
+  return(df)
+}
+
+# Redundancy analysis for variables selection
+dbRDAselection <- function(phylo, variables, distance='wunifrac', direction='both') {
+  # Remove samples with missing values for the specified variables
+  phylo <- ps_drop_incomplete(phylo, var=variables, verbose=TRUE)
+  # Extract the metadata table from the phyloseq object
+  meta <- SampleDataframe(phylo)
+  # Perform a dbRDA with a constant term only
+  dbrda.0 <- dbrda(phyloseq::distance(phylo, method=distance) ~ 1, data=meta)
+  # Perform a dbRDA with all specified variables
+  dbrda.all <- dbrda(as.formula(paste('phyloseq::distance(phylo, method=distance) ~', paste(variables, collapse=" + "))), data=meta)
+  # Perform stepwise variable selection using the ordiR2step function
+  select <- ordiR2step(dbrda.0, scope=formula(dbrda.all), adjR2thresh=RsquareAdj(dbrda.all)$adj.r.squared, direction=direction, permutations=99)
+  # Make a copy of the selected model and adjust the p-values for multiple comparisons
+  select.adj <- select
+  select.adj$anova$`Pr(>F)` <- p.adjust(select$anova$`Pr(>F)`, method='BH', n=length(variables))
+  # Return the results of the adjusted model and the unadjusted model
+  return(select.adj$anova)
+  return(select$anova)
+}
+
+###################################### GENE EXPRESSION ############################################
+
+# Longitudinal boxplots
+LongitudinalBoxplots <- function(data, labels, title, ylab) {
+  # Create the ggplot object with basic layers
+  p <- ggplot(data, aes(x=AgeFactor, y=Abundance, fill=Group)) +
+    geom_smooth(aes(color=Group, fill=Group), method='lm', level=0.75) +
+    geom_point(aes(color=Group), size=2, shape=21, position=position_jitterdodge(jitter.width = 0.5, jitter.height = 0.1), stroke=0.25) +
+    geom_boxplot(aes(group=interaction(Group, AgeFactor), color=Group, fill=Group), outlier.shape=NA, width=0.5) +
+    geom_smooth(aes(group = Group, color = Group, fill = Group), method = 'lm', level = 0.8) +
+    # Add labels at specific x and y coordinates for each label
+    geom_label(label=labels[1], x=0, y=max(data$Abundance), color="black", fill="white", label.size=0) +
+    geom_label(label=labels[2], x=3, y=max(data$Abundance), color="black", fill="white", label.size=0) +
+    geom_label(label=labels[3], x=6, y=max(data$Abundance), color="black", fill="white", label.size=0) +
+    # Set the color and fill scales
+    scale_fill_manual(values=adjustcolor(custom_palette_2groups, alpha=0.5)) +
+    scale_color_manual(values=adjustcolor(custom_palette_2groups, alpha=1)) +
+    # Set the x-axis breaks
+    scale_x_continuous(breaks=c(0, 3, 6, 9, 12, 15, 18)) + 
+    # Set the plot title and axis labels
+    ggtitle(title) + xlab('Age (months)') + ylab(ylab) +
+    # Remove the legend
+    theme(legend.position='none')
+  
+  # Return the ggplot object
+  return(p)
+}
+
+# Plot Volcano 
+PlotVolcanoGenes <- function(DE_matrix, Direction, palette, title) {
+  
+  plot <- ggplot(data=DE_matrix, aes(x=logFC, y=-log10(adj.P.Val), label=label)) + # Create a ggplot object with log2FC on x-axis and -log10(p-value) on y-axis, with label as the label of each point
+    
+    # Add horizontal line at -log10(FDR_param) and vertical lines at -FC_param and FC_param
+    geom_hline(yintercept=-log10(FDR_param), col='grey') + 
+    geom_vline(xintercept=c(-FC_param, FC_param), col='grey') + 
+    
+    # Add points and labels for significant differentially expressed genes
+    geom_point(aes(fill=Direction, color=Direction), shape=ifelse(DE_matrix$Immune=="Yes", 22, 21), size=ifelse(DE_matrix$Immune=="Yes", 3, 2), stroke=0.25) + 
+    geom_label_repel(aes(fill=Direction), color='black', label.size=0, label.r=0.5, size=4, label.padding=0.25, max.overlaps=30, 
+                     segment.size=0.25, segment.alpha=0.95, segment.color="grey") + 
+    
+    # Add manual color scales for fill and color
+    scale_fill_manual(values=adjustcolor(palette, alpha=0.5)) +
+    scale_color_manual(values=adjustcolor(palette, alpha=1)) +
+    
+    # Add title and move legend to bottom
+    ggtitle(title) + theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)) +
+    
+    # Set x-axis limits to be symmetric around 0
+    xlim(c(-max(abs(DE_matrix$logFC)), max(abs(DE_matrix$logFC))))
+  
+  return(plot)
+}
+
+# Plot cell proportions
+PlotCellProportions <- function(df, celltype, palette){
+  # Convert the cell type column to numeric
+  df$celltype <- as.numeric(df[,celltype])
+  # Get the maximum value of the cell type column for y-axis limits
+  max <- max(df$celltype)
+  # Create a ggplot object with a boxplot, jittered points, and significance bars
+  plot <- ggplot(df, aes(x=Group, y=celltype)) +
+    geom_boxplot(aes(x=Group, y=celltype), width=0.5, outlier.shape=NA, col=adjustcolor(palette, alpha=1), fill=adjustcolor('white', alpha=1)) +
+    geom_boxplot(aes(x=Group, y=celltype), width=0.5, outlier.shape=NA, col=adjustcolor(palette, alpha=1), fill=adjustcolor(palette, alpha=0.25)) +
+    geom_point(aes(y=celltype, fill=Group, color=Group), size=2, shape=21, position=position_jitter(0.1), stroke=0.25) +
+    # Add manual fill and color scales using the provided palette
+    scale_fill_manual(values=adjustcolor(palette, alpha=0.5)) +
+    scale_color_manual(values=adjustcolor(palette, alpha=1)) +
+    # Add significance bars with specified comparisons and significance levels
+    geom_signif(comparisons=list(c('Yes','No'), step_increase=0.2), map_signif_level=c('***'=0.001, '**'=0.01, '*'=0.05)) +
+    ggtitle(celltype) + xlab('') + ylab(paste(celltype, '%')) + theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)) +
+    # Set y-axis limits to the maximum cell type percentage plus 10%
+    ylim(0,(max+max*0.1))
+  return(plot)
+}
+
+# Plots for continuous metadata
+PlotCellProportionsAge <- function(df, celltype, palette){
+  # Convert the cell type values to numeric
+  df$celltype <- as.numeric(df[,celltype])
+  
+  # Create a scatter plot with jittered points and a linear regression line for each group
+  plot <- ggplot(df, aes(x=Age, y=celltype)) +
+    geom_point(aes(x=Age, y=celltype, fill=Group, color=Group),
+               size=2, shape=21,  position=position_jitterdodge(jitter.width = 0.5, jitter.height = 0.1), stroke=0.25) + # plot points with fill and color by Group, and jitter them to avoid overlap
+    geom_smooth(aes(x=Age, y=celltype, fill=Group, color=Group), method='lm', level=0.8) + # add linear regression lines with fill and color by Group
+    geom_boxplot(aes(group=interaction(Group, Age), color=Group, fill=Group), outlier.shape=NA, width=0.5) +
+    scale_fill_manual(values=adjustcolor(palette, alpha=0.5))  + # set fill colors with alpha value
+    scale_x_continuous(breaks=c(0, 3, 6, 9, 12, 15, 18)) + # set x-axis breaks
+    scale_color_manual(values=adjustcolor(palette, alpha=1)) + # set color values with alpha value
+    ggtitle(celltype) + xlab('Age (months)') + ylab(celltype) + # set title and labels for plot
+    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)) # remove legend
+  
+  return(plot) # return plot object
+}
+
+# Transform non-numeric data into numeric
+SelectIntoNumeric <- function(metadata, variables){
+  # Subset the data frame to include only the selected variables
+  metadata <- metadata[,colnames(metadata) %in% variables]
+  
+  # Convert any character columns to factor columns
+  cols <- which(sapply(metadata, is.character)) 
+  if (length(cols>=1)) {
+    metadata[cols] <- lapply(metadata[cols], as.factor)
+  }
+  
+  # Convert any non-numeric or non-integer columns to numeric
+  cols <- which(!sapply(metadata,class)%in% c('numeric', 'integer'))
+  if (length(cols>=1)) {
+    cols.factor <- which(sapply(metadata,class)=='factor')
+    metadata[cols] <- lapply(metadata[cols], as.numeric)
+  }
+  
+  # Reverse the order of the selected variables in the data frame
+  metadata <- metadata[,rev(variables)]
+  
+  # Return the modified data frame
+  return(metadata)
+}
+
+# Plot distance transitions
+PlotDistanceTimepoint <- function(se, title){
+  
+  # Get the sample metadata
+  samples.data <- se$targets
+  
+  # Keep only samples from patients with more than two timepoints
+  keep.longitudinal <- names(which(rowSums(table(samples.data$Patient, samples.data$TimepointFactor))>2))
+  se <- se[,se$targets$Patient %in% keep.longitudinal] 
+ 
+   # Calculate the distance matrix between samples
+  distance.matrix <- as.matrix(dist(t(se$E), method='maximum'))
+  
+  # Add a "barcode" column to the metadata
+  samples.data$barcode <- rownames(samples.data)
+  
+  # Initialize a data frame to store the distance transitions
+  transition.df <- data.frame('T1:1week-3months'=rep(NA, length(keep.longitudinal)),
+                              'T2:3months-6months'=rep(NA, length(keep.longitudinal)),
+                              'T3:6months-1year'=rep(NA, length(keep.longitudinal)))
+  transition.df$Patient <- keep.longitudinal
+  
+  # Assign each patient to a "Group" based on whether they belong to a certain subgroup
+  transition.df$Group <- ifelse(keep.longitudinal %in% samples.data[samples.data$Group=='Yes',]$Patient==TRUE, 'Yes', 'No')
+  
+  # Loop over each patient and calculate the distances between their timepoints
+  for (i in 1:length(keep.longitudinal)) {
+    T1 <- samples.data$barcode[which(samples.data$Patient==keep.longitudinal[i] & samples.data$TimepointFactor=='T1-1week')]
+    T2 <- samples.data$barcode[which(samples.data$Patient==keep.longitudinal[i] & samples.data$TimepointFactor=='T2-3months')]
+    T3 <- samples.data$barcode[which(samples.data$Patient==keep.longitudinal[i] & samples.data$TimepointFactor=='T3-6months')]
+    T4 <- samples.data$barcode[which(samples.data$Patient==keep.longitudinal[i] & samples.data$TimepointFactor=='T4-1year')]
+    transition.df$T1.1week.3months[i] <- ifelse(c(T1,T2) %in% colnames(distance.matrix), distance.matrix[T1,T2], NA)
+    transition.df$T2.3months.6months[i] <- ifelse(c(T2,T3) %in% colnames(distance.matrix), distance.matrix[T2,T3], NA)
+    transition.df$T3.6months.1year[i] <- ifelse(c(T3,T4) %in% colnames(distance.matrix), distance.matrix[T3,T4], NA)
+  }
+  
+  # Melt the transition data frame to long format
+  transition.melt <- melt(transition.df)
+  
+  # Remove rows with missing values
+  transition.melt <- transition.melt[!is.na(transition.melt$value),]
+  
+  # Create a boxplot with overlaid points and significance bars
+  plot <- ggplot(transition.melt, aes(x=variable, y=value, fill=variable, color=variable)) +
+    geom_boxplot(aes(group = variable), fill = "white", color = "white", width = 0.5, outlier.shape = NA) +
+    geom_boxplot(aes(group = variable), width = 0.5, outlier.shape = NA) +
+    geom_point(size = 2, shape = 21, stroke = 0.25, position = position_jitterdodge(jitter.width = 0.5, jitter.height = 0)) +
+    scale_fill_manual(values=adjustcolor(custom_palette_age, alpha=0.5)) +
+    scale_color_manual(values=adjustcolor(custom_palette_age, alpha=1)) +
+    geom_signif(comparisons=list(c('T1.1week.3months','T2.3months.6months')),
+                map_signif_level=c('***'=0.001, '**'=0.01, '*'=0.05), 
+                col='black') +
+    scale_x_discrete(labels=c(paste0('1 week - 3 months', '\n', 'n = ', table(transition.melt$variable)[1]),
+                              paste0('3 months - 6 months', '\n', 'n = ', table(transition.melt$variable)[2]),
+                              paste0('6 months - 1 year', '\n', 'n = ', table(transition.melt$variable)[3]))) +
+    ylim(0,(max(transition.melt$value)+max(transition.melt$value)*0.1)) +
+    ggtitle(title) + xlab('') + ylab('Δ distance between pairs (maximum)') + theme(legend.position='none', text=element_text(size=12))
+  return(plot)}
+
+# PathfindR on gene list
+PathfindRGOKEGG <- function(DE_table, pval_threshold, enrich_threshold, immune = FALSE){
+  if (immune == TRUE){
+    DE_table <- DE_table[DE_table$Immune=="Yes",]}
+  path.df <- data.frame(Symbol=DE_table$ID, logFC=DE_table$logFC, DE_table$adj.P.Val)
+  path.df.upregulated <- path.df[path.df$logFC>0,]
+  path.df.downregulated <- path.df[path.df$logFC<0,]
+  library(org.Hs.eg.db)
+  
+  # Run pathway analysis
+  path.output.KEGG.upregulated <- run_pathfindR(path.df.upregulated, p_val_threshold = pval_threshold, enrichment_threshold = enrich_threshold,
+                                    output_dir = 'Outputs/pathfindR_KEGG', gene_sets = "KEGG",
+                                    iterations = 1, n_processes = 4) 
+  
+  path.output.GO.upregulated <- run_pathfindR(path.df.upregulated, p_val_threshold = pval_threshold, enrichment_threshold = enrich_threshold,
+                                              output_dir = 'Outputs/pathfindR_GO-BP', gene_sets = "GO-BP",
+                                              iterations = 1, n_processes = 4) 
+  
+  path.output.KEGG.downregulated <- run_pathfindR(path.df.downregulated, p_val_threshold = pval_threshold, enrichment_threshold = enrich_threshold,
+                                                 output_dir = 'Outputs/pathfindR_KEGG', gene_sets = "KEGG",
+                                                 iterations = 1, n_processes = 4) 
+  
+  path.output.GO.downregulated <- run_pathfindR(path.df.downregulated, p_val_threshold = pval_threshold, enrichment_threshold = enrich_threshold,
+                                                output_dir = 'Outputs/pathfindR_GO-BP', gene_sets = "GO-BP",
+                                                iterations = 1, n_processes = 4) 
+  # Add pathway origin to the name
+  path.output.KEGG.upregulated$Term_Description <- paste("KEGG:", path.output.KEGG.upregulated$Term_Description)
+  path.output.GO.upregulated$Term_Description <- paste("GO-BP:", path.output.GO.upregulated$Term_Description)
+  path.output.KEGG.downregulated$Term_Description <- paste("KEGG:", path.output.KEGG.downregulated$Term_Description)
+  path.output.GO.downregulated$Term_Description <- paste("GO-BP:", path.output.GO.downregulated$Term_Description)
+  
+  # Add upregulated vs downregulated
+  path.output.KEGG.upregulated$Direction <- "Upregulated"
+  path.output.GO.upregulated$Direction <- "Upregulated"
+  path.output.KEGG.downregulated$Direction <- "Downregulated"
+  path.output.GO.downregulated$Direction <- "Downregulated"
+  
+  # Combine all pathways results
+  path.output.all <- rbind(path.output.KEGG.upregulated, path.output.GO.upregulated, path.output.KEGG.downregulated, path.output.GO.downregulated)
+  #path.output.all <- rbind(path.output.KEGG.upregulated, path.output.KEGG.downregulated)
+  
+  # Add number of terms per pathway and filter
+  path.output.all$GeneCounts <- sapply(strsplit(paste(path.output.all$Up_regulated, path.output.all$Down_regulated, sep = ","), ","), function(x) sum(x != ""))
+  return(path.output.all)
+}
+
+# Plot pathways
+PlotPathfindR <- function(pathways_table, palette, number_pathways, min_genecounts, title){
+  
+  # Filter top pathways
+  filtered_df <- pathways_table[order(pathways_table$highest_p), ]
+  filtered_df <- filtered_df[filtered_df$GeneCounts >= min_genecounts, ]
+  filtered_df <- filtered_df[1:number_pathways, ]
+  
+  # Calculate transparency based on log10 of P.adj
+  filtered_df$Transparency <- scales::rescale((1/log10(filtered_df$highest_p)), c(0.8, 0.9))
+  
+  # Reorder based on log2FoldChange
+  filtered_df <- filtered_df[order(filtered_df$Fold_Enrichment),]
+  
+  # Create the barplot
+  p <- ggplot(filtered_df, aes(x = factor(Term_Description, levels = unique(filtered_df$Term_Description)), y = Fold_Enrichment, 
+                               color = Direction, fill = Direction, alpha = Transparency)) +
+    geom_bar(stat = "identity") +
+    scale_fill_manual(values = palette) +
+    scale_color_manual(values = palette) +
+    coord_flip() +
+    labs(x = "Pathway", y = "Fold enrichment") +
+    ggtitle(title) +
+    theme(legend.position = c(1,0),
+          legend.box.background = element_rect(), 
+          text = element_text(size = 12),
+          legend.title = element_blank(),
+          legend.text = element_text(size = 10),
+          legend.key.size = unit(0.5, "cm")) +
+    guides(alpha = "none")
+  return(p)
+}
+
+# Save pathway of a given module
+ModulePathway <- function(module_number) {
+  
+  # Save current wd
+  initialWD <- getwd()
+  setwd('Figures/Individual/')
+  
+  # Get gene IDs of the genes belonging to the module
+  geneIDs <- names(which(net$colors == module_number))
+  
+  # Filter the DE_Group data to get the logFC values of the genes belonging to the module
+  logFC <- DE_Group[DE_Group$ID %in% geneIDs,]
+  
+  # Convert gene symbols to Entrez IDs using the org.Hs.eg.db database
+  entrezIDs <- bitr(logFC$ID, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = "org.Hs.eg.db")
+  
+  # Rename the final data frame with the Entrez IDs as the row names
+  final <- logFC$logFC
+  names(final) <- entrezIDs$ENTREZID
+  
+  # Get the KEGG pathway IDs for the given module
+  pathwayIDs <- sub(".*KEGG.", "", enrich.df[enrich.df$class == paste0("ME", module_number), ]$dataSetID)
+  print(pathwayIDs)
+  
+  # Generate the pathway visualization using pathview
+  pathview(gene.data = final, pathway.id = pathwayIDs, kegg.native = TRUE, key.pos = "bottomleft", out.dir = 'Figures/',
+           cpd.lab.offset = 0, cex = 0.65, afactor = 5, res = 700, low = "lightsalmon1", mid = "lightsalmon2", 
+           high = "indianred", limit = list(gene = c(min(final), max(final))), file.name = output_path)
+  pathview(gene.data = final, pathway.id = pathwayIDs, kegg.native = FALSE, key.pos = "bottomleft", out.dir = 'Figures/',
+           cpd.lab.offset = 0, cex = 0.65, afactor = 5, res = 700, low = "lightsalmon1", mid = "lightsalmon2", 
+           high = "indianred", limit = list(gene = c(min(final), max(final))), file.name = output_path)
+  
+  # Reset woorking directory
+  setwd(initialWD)
+}
+
+###################################### MULTI-OMICS ############################################
+# Boxplots for metadata
+BoxplotMetadataMOFAfactor <- function(MOFArun, factor, parameter, title, palette, paletteboxplot) {
+  
+  # Extract factor values and metadata information from the MOFA object
+  MOFA <- MOFArun
+  factorvalues <- get_factors(MOFA, factors = factor)
+  metadata <- MOFA@samples_metadata[parameter]
+  group <- MOFA@samples_metadata['Group']
+  
+  # Combine factor values, metadata information, and group information into a data frame
+  df <- cbind(factorvalues, metadata, group)
+  colnames(df) <- c('Factor', 'Parameter', 'Group')
+  
+  # Remove rows with missing values in the metadata column
+  df.complete <- df[df$Parameter != 'NA', ]
+  
+  # Create the plot using ggplot2
+  plot <- ggplot(df.complete, aes(x = Parameter, y = Factor)) +
+    
+    # Add the boxplot with solid outlines
+    geom_boxplot(
+      width = 0.5,
+      outlier.shape = NA,
+      col = adjustcolor(paletteboxplot, alpha = 1),
+      fill = adjustcolor('white', alpha = 1)
+    ) +
+    
+    # Add the boxplot with dotted outlines
+    geom_boxplot(
+      width = 0.5,
+      outlier.shape = NA,
+      col = adjustcolor(paletteboxplot, alpha = 0.25),
+      fill = adjustcolor(paletteboxplot, alpha = 0.1)
+    ) +
+    
+    # Add points representing the data, colored by group
+    geom_point(
+      aes(color = Group, fill = Group),
+      size = 2,
+      shape = 21,
+      position = position_jitter(0.1),
+      stroke = 0.25
+    ) +
+    
+    # Set the fill and outline colors for the points
+    scale_fill_manual(values = adjustcolor(palette, alpha = 0.5)) +
+    scale_color_manual(values = adjustcolor(palette, alpha = 1)) +
+    
+    # Add significance labels using a Wilcoxon test and adjust the font size based on the significance level
+    geom_signif(
+      test = 'wilcox.test',
+      comparisons = list(
+        c(levels(as.factor(df.complete$Parameter))[1],levels(as.factor(df.complete$Parameter))[2]),
+        step_increase = 0.2
+      ),
+      map_signif_level = c('***' = 0.001, '**' = 0.01, '*' = 0.05)
+    ) +
+    
+    # Set the plot title and axis labels
+    ggtitle(title) +
+    xlab('') +
+    ylab(title) +
+    ylab(factor) +
+    
+    # Remove the legend
+    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12))
+  
+  # Return the plot
+  return(plot)
+}
+
+# Module connectivity
+plotModuleConnectivity <- function(connectivity_matrix, module_number, custom_palette, title, immune = FALSE) {
+  # Convert connectivity matrix to a data frame for manipulation
+  modules.connectivity.df <- as.data.frame(connectivity_matrix)
+  
+  # Subset data for the specified module and plot
+  modules.connectivity.df.module <- modules.connectivity.df[modules.connectivity.df$Module == paste0("ME", module_number), ]
+  
+  # Add label column based on conditions, if immune == TRUE
+  if (immune) {
+    modules.connectivity.df.module$label <- ifelse(modules.connectivity.df.module$k > max(modules.connectivity.df.module$k)/2 & modules.connectivity.df.module$Immune == "Yes", modules.connectivity.df.module$ID, NA)
+  } else {
+    modules.connectivity.df.module$label <- ifelse(modules.connectivity.df.module$k > max(modules.connectivity.df.module$k)/2, modules.connectivity.df.module$ID, NA)}
+  
+  # Create plot using ggplot2
+  plot <- ggplot(modules.connectivity.df.module, aes(x = k, y = -log10(adj.P.Val), label = label)) +
+    # Add linear regression line in grey
+    geom_smooth(method = "lm", col = "grey") +
+    # Add points with size and shape based on immune status
+    geom_point(aes(fill = k, color = k), shape = ifelse(modules.connectivity.df.module$Immune == "Yes", 22, 21), size = 3, stroke = 0.25) +
+    # Add labels with repulsion to prevent overlap
+    geom_label_repel(aes(fill = k, color = k), color = 'black', label.size = 0, 
+                     label.r = 0.5, size = 4, label.padding = 0.25, max.overlaps = 30, segment.size = 0.25, segment.alpha = 0.95, segment.color = "grey") +
+    # Set custom color palettes for fill and color
+    scale_fill_gradient2(low = "grey80", mid = "grey80", high = custom_palette, midpoint = max(modules.connectivity.df.module$k)/4) +
+    scale_color_gradient2(low = "grey80", mid = "grey80", high = custom_palette, midpoint = max(modules.connectivity.df.module$k)/4) +
+    # Add correlation coefficient as a label
+    geom_cor(method = "pearson") +
+    # Add title and axis labels, and remove legend
+    ggtitle(title) + xlab("Intramodular connectivity (k)") + ylab("Disease significance (-log10(adj. p-value))") + 
+    theme(legend.position = "none", text = element_text(size = 12))
+  
+  return(plot)
+}
