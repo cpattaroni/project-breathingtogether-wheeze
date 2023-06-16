@@ -79,7 +79,7 @@ source("Functions.R")
 
 # Set custom color palettes
 custom_palette_2groups <- c("cadetblue4", "lightsalmon2") # for two-group comparisons
-custom_palette_age <- c("pink", "plum3", "plum4", "cadetblue") # for age-related comparisons
+custom_palette_age <- c("pink", "plum3", "plum4", "#66475A") # for age-related comparisons
 ```
 
 # [Metadata]{.underline}
@@ -1343,7 +1343,9 @@ host.dge.blood <- host.dge.blood[host.dge.blood$genes$gene_biotype == "protein_c
 dim(host.dge.blood)
 
 # Select immune genes only
-ImmuneDB <- read.table("../Databases/InnateDB_genes.csv", sep = ",", header = TRUE)
+#ImmuneDB <- read.table("../Databases/InnateDB_genes.csv", sep = ",", header = TRUE)
+ImmuneDB <- read.table("../Databases/GeneList.txt", sep = "\t", header = TRUE)
+ImmuneDB$name <- ImmuneDB$Symbol
 host.dge.nasal$genes$immune <- ifelse(host.dge.nasal$genes$hgnc_symbol %in% ImmuneDB$name, "Yes", "No")
 host.dge.blood$genes$immune <- ifelse(host.dge.blood$genes$hgnc_symbol %in% ImmuneDB$name, "Yes", "No")
 #host.dge.nasal <- host.dge.nasal[host.dge.nasal$genes$immune =="Yes", ]
@@ -1457,7 +1459,6 @@ ggsave("../Figures/Individual/Long_Volcano_Age.pdf", plot.volcano.Age, width=30,
 
 # Save results to excel sheet
 write.xlsx(DE_Age, "../Outputs/Age_DE_results.xlsx", row.names=FALSE)
-write.xlsx(DE_Age_immune, "../Outputs/Age_DE_results_immune.xlsx", row.names=FALSE)
 ```
 
 #### 3) Pathway analysis
@@ -1882,6 +1883,10 @@ ggsave("../Figures/Main/Figure5.pdf", Figure5, width=35, height=60, units="cm", 
 #### Multi-omics parameters
 
 ```{r}
+# Set color palettes for omics view
+custom.palette.omics1 <- c('#625B78','#4D8594','#5F978E','#4E976F')
+custom.palette.omics2 <- c('#625B78','#54718D','#4D8594','#5F978E','#4E976F')
+
 # Set parameters for microbial data filtering and transformation
 prev.omics <- 0.1
 count.omics <- 1
@@ -1900,7 +1905,7 @@ rownames(metaS.6m) <- paste0("S", metaS.6m$Subjectnumber, ".month6")
 metaS.1y <- metaS
 metaS.1y$TimepointSimplified <- 12
 rownames(metaS.1y) <- paste0("S", metaS.1y$Subjectnumber, ".year1")
-metaS.long <- rbind(metaS.1w, metaS.3m, metaS.3m, metaS.1y)
+metaS.long <- rbind(metaS.1w, metaS.3m, metaS.6m, metaS.1y)
 
 # Prepare metadata file for longitudinal experiment
 rownames(metaS) <- paste0("S", metaS$Subjectnumber)
@@ -1956,10 +1961,6 @@ colnames(Host.matrix.long) <- ifelse(host.nasal.long$targets$TimepointFactor == 
                                      ifelse(host.nasal.long$targets$TimepointFactor == "T3-6months",
                                      paste0("S", host.nasal.long$targets$Subject, ".month6"),
                                      paste0("S", host.nasal.long$targets$Subject, ".year1"))))
-gene_vars <- apply(Host.matrix.long, 1, var)
-sorted_genes <- order(gene_vars, decreasing = TRUE)
-top_genes <- head(sorted_genes, 1000)
-Host.matrix.long <- Host.matrix.long[top_genes,]
 rownames(Host.matrix.long) <- make.unique(rownames(Host.matrix.long))
 
 # Create list of omics datasets
@@ -1979,50 +1980,31 @@ MOFAobject.long <- create_mofa(omicsmae.long)
 # Set parameters
 DataOptions <- get_default_data_options(MOFAobject.long)
 ModelOptions <- get_default_model_options(MOFAobject.long)
+ModelOptions$num_factors <- 4
 TrainOptions <- get_default_training_options(MOFAobject.long)
-TrainOptions$drop_factor_threshold <- 0.05
 TrainOptions$seed <- 2
 
-# Run MOFA
+# Prepare MOFA and add time information
 MOFAobject.long <- prepare_mofa(MOFAobject.long, data_options = DataOptions, model_options = ModelOptions, training_options = TrainOptions)
-MOFArun.long <- run_mofa(MOFAobject.long, outfile = "../Outputs/MOFA.long.rds", use_basilisk = FALSE)
+MOFArun.long <- run_mofa(MOFAobject.long, outfile = "../Outputs/MOFA.long.rds", use_basilisk = FALSE, save_data = FALSE)
 ```
 
 #### 3) MOFA variance and factors
 
 ```{r}
 # Reload MOFA results
-(plot.data.overview.long <- plot_data_overview(MOFAobject.long, colors = c(rep("plum4", 5))) +
+(plot.data.overview.long <- plot_data_overview(MOFAobject.long, colors = custom.palette.omics1) +
     theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)))
-(plot.mofa.explained.long <- plot_variance_explained(MOFArun.long, max_r2 = 15) + scale_fill_gradient(low = "white", high = "plum4") +
-    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)))
-(r2f <- as.data.frame(melt(MOFArun.long@cache$variance_explained$r2_per_factor[[1]])))
-(r2f.plot.long <- ggplot(r2f, aes(fill=Var2, y=value, x=Var1)) +
-    scale_fill_manual(values=scales::alpha(colorRampPalette(brewer.pal(10, "RdBu"))(5), 0.6)) +
-    geom_bar(position='stack', stat='identity', col='white', cex=0) +
-    theme(legend.position = "bottom", legend.box.background=element_rect(), text=element_text(size=12)) +
-    labs(x='MOFA+ factor', y='% of variance explained'))
+(plot.MOFA.var.long <- MOFAvarianceexplained(MOFArun.long, custom.palette.omics1, title = "MOFA longitudinal cohort - variance explained"))
 
-(plot.factor1 <- BoxplotMetadataMOFAfactor(MOFArun.long, "Factor1", "TimepointSimplified", "Latent Factor1", custom_palette_age, custom_palette_age))
-(plot.factor2 <- BoxplotMetadataMOFAfactor(MOFArun.long, "Factor2", "TimepointSimplified", "Latent Factor2", custom_palette_2groups, custom_palette_2groups))
-(plot.factor3 <- BoxplotMetadataMOFAfactor(MOFArun.long, "Factor3", "Group", "Latent Factor3", custom_palette_2groups, custom_palette_2groups))
+# Plot top factors
+(MOFAfactorloadings(MOFArun.long, "Factor1", "Nasal", rep(custom.palette.omics1[1],2), 10, "Factor1 : Nasal host gene expression"))
+(MOFAfactorloadings(MOFArun.long, "Factor2", "Nasal", rep(custom.palette.omics1[1],2), 10, "Factor2 : Nasal host gene expression"))
+(MOFAfactorloadings(MOFArun.long, "Factor3", "Nasal", rep(custom.palette.omics1[1],2), 10, "Factor3 : Nasal host gene expression"))
+(MOFAfactorloadings(MOFArun.long, "Factor3", "Bacteria", rep(custom.palette.omics1[2],2), 10, "Factor3 : Bacteria"))
 
-write.xlsx(get_factors(MOFArun.long)$group1, "Outputs/MOFA_weights_long.xlsx")
-
-plot_top_weights(MOFArun.long, view = "Nasal", factor = 1, nfeatures = 20)
-plot_top_weights(MOFArun.long, view = "Blood", factor = 1, nfeatures = 20)
-plot_top_weights(MOFArun.long, view = "Bacteria", factor = 1, nfeatures = 20)
-
-plot_top_weights(MOFArun.long, view = "Nasal", factor = 3, nfeatures = 20)
-plot_top_weights(MOFArun.long, view = "Blood", factor = 3, nfeatures = 20)
-plot_top_weights(MOFArun.long, view = "Bacteria", factor = 3, nfeatures = 20)
-
-# Plot loadings for each factor
-(plot.host.loadings.factor1 <- plot_top_weights(MOFArun.long, view = "Nasal", factor = 1, nfeatures = 10) +
-    geom_segment(aes_string(xend = "feature_id"), size = 2, yend = 0, col = "grey") +
-    geom_point(size = 6, col = c(rep(custom_palette_2groups[2], 10))) +
-    scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) +
-    theme(axis.text.y = element_text(hjust = 1)))
+# Plot factor value with age
+(MOFAplotAge(MOFArun.long, "Factor3", custom_palette_age, "Factor3 with age"))
 ```
 
 ### DISEASE MULTI-OMICS
@@ -2048,17 +2030,27 @@ colnames(Fung.matrix) <- paste0("S", SampleDataframe(fung.1Y)$Subject)
 Vir.matrix <- OTUDataframe(vir.1Y)
 colnames(Vir.matrix) <- paste0("S", SampleDataframe(vir.1Y)$Subject)
 
-# Prepare host longitudinal immune gene matrix
-Host.matrix <- host.nasal$E[rownames(host.nasal$E) %in% ImmuneDB$name,]
-colnames(Host.matrix) <- paste0('S', host.nasal$targets$Subjectnumber)
-gene_vars <- apply(Host.matrix, 1, var)
+# Prepare nasal host matrix
+Host.matrix.nasal <- host.nasal.1Y$E[rownames(host.nasal.1Y$E) %in% ImmuneDB$name,]
+colnames(Host.matrix.nasal) <- paste0('S', host.nasal.1Y$targets$Subjectnumber)
+gene_vars <- apply(Host.matrix.nasal, 1, var)
 sorted_genes <- order(gene_vars, decreasing = TRUE)
 top_genes <- head(sorted_genes, 1000)
-Host.matrix <- Host.matrix[top_genes,]
-rownames(Host.matrix) <- make.unique(rownames(Host.matrix))
+Host.matrix.nasal <- Host.matrix.nasal[top_genes,]
+rownames(Host.matrix.nasal) <- make.unique(rownames(Host.matrix.nasal))
+
+# Prepare blood host matrix
+Host.matrix.blood <- host.dge.blood$E[rownames(host.dge.blood$E) %in% ImmuneDB$name,]
+colnames(Host.matrix.blood) <- paste0('S', host.dge.blood$targets$Subjectnumber)
+gene_vars <- apply(Host.matrix.blood, 1, var)
+sorted_genes <- order(gene_vars, decreasing = TRUE)
+top_genes <- head(sorted_genes, 1000)
+Host.matrix.blood <- Host.matrix.blood[top_genes,]
+rownames(Host.matrix.blood) <- make.unique(rownames(Host.matrix.blood))
 
 # Create list of omics datasets
-omicslist <- list(Nasal=as.matrix(Host.Nasal.Immune.Genes.matrix), Blood=as.matrix(Host.Blood.Immune.Genes.matrix), Bacteria=as.matrix(Bact.matrix), Fungi=as.matrix(Fung.matrix), Viruses=as.matrix(Vir.matrix))
+omicslist <- list(Nasal=as.matrix(Host.matrix.nasal), Blood=as.matrix(Host.matrix.blood), 
+                  Bacteria=as.matrix(Bact.matrix), Fungi=as.matrix(Fung.matrix), Viruses=as.matrix(Vir.matrix))
 
 # Create a MultiAssayExperiment object
 omicsmae <- MultiAssayExperiment(experiments=omicslist, colData=DataFrame(metaS))
@@ -2074,8 +2066,8 @@ MOFAobject <- create_mofa(omicsmae)
 # Set parameters
 DataOptions <- get_default_data_options(MOFAobject)
 ModelOptions <- get_default_model_options(MOFAobject)
+ModelOptions$num_factors <- 3
 TrainOptions <- get_default_training_options(MOFAobject)
-TrainOptions$drop_factor_threshold <- 0.05
 TrainOptions$seed <- 2
 
 # Run MOFA
@@ -2087,87 +2079,46 @@ MOFArun <- run_mofa(MOFAobject, outfile = "../Outputs/MOFA.rds", use_basilisk = 
 
 ```{r eval=T, warning=F, cache=T}
 # Reload MOFA results
-(plot.data.overview <- plot_data_overview(MOFAobject, colors = c(rep("plum4", 5))) +
+(plot.data.overview <- plot_data_overview(MOFAobject, colors = custom.palette.omics2) +
     theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)))
-(plot.mofa.explained <- plot_variance_explained(MOFArun, max_r2 = 15) + scale_fill_gradient(low = "white", high = "plum4") +
-    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)))
-(r2f <- as.data.frame(melt(MOFArun@cache$variance_explained$r2_per_factor[[1]])))
-(r2f.plot <- ggplot(r2f, aes(fill=Var2, y=value, x=Var1)) +
-    scale_fill_manual(values=scales::alpha(colorRampPalette(brewer.pal(10, "RdBu"))(5), 0.6)) +
-    geom_bar(position='stack', stat='identity', col='white', cex=0) +
-    theme(legend.position = "bottom", legend.box.background=element_rect(), text=element_text(size=12)) +
-    labs(x='MOFA+ factor', y='% of variance explained'))
+(plot.MOFA.var <- MOFAvarianceexplained(MOFArun, custom.palette.omics2, title = "MOFA 1year cohort - variance explained"))
 
-(plot.factor1 <- BoxplotMetadataMOFAfactor(MOFArun, "Factor1", "Group", "Latent Factor1", custom_palette_2groups, custom_palette_2groups))
-(plot.factor2 <- BoxplotMetadataMOFAfactor(MOFArun, "Factor2", "Group", "Latent Factor2", custom_palette_2groups, custom_palette_2groups))
-(plot.factor3 <- BoxplotMetadataMOFAfactor(MOFArun, "Factor3", "Group", "Latent Factor3", custom_palette_2groups, custom_palette_2groups))
+# Plot factor value with group
+(plot.factor1 <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "Group", "Latent Factor1", custom_palette_2groups, custom_palette_2groups))
+(plot.factor2 <- BoxplotBinaryMOFAfactor(MOFArun, "Factor2", "Group", "Latent Factor2", custom_palette_2groups, custom_palette_2groups))
+(plot.factor3 <- BoxplotBinaryMOFAfactor(MOFArun, "Factor3", "Group", "Latent Factor3", custom_palette_2groups, custom_palette_2groups))
 
-write.xlsx(get_factors(MOFArun)$group1, "Outputs/MOFA_weights.xlsx")
+# Plot factor 1 top features
+(MOFAfactorloadings(MOFArun, "Factor1", "Nasal", custom_palette_2groups, 20, "Factor1 : Nasal host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor1", "Blood", custom_palette_2groups, 10, "Factor1 : Blood host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor1", "Bacteria",custom_palette_2groups, 10, "Factor1 : Bacteria"))
 
-plot_top_weights(MOFArun, view = "Nasal", factor = 1, nfeatures = 20)
-plot_top_weights(MOFArun, view = "Blood", factor = 1, nfeatures = 20)
-plot_top_weights(MOFArun, view = "Bacteria", factor = 1, nfeatures = 20)
+(MOFAfactorloadings(MOFArun, "Factor2", "Nasal", custom_palette_2groups, 10, "Factor2 : Nasal host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor2", "Blood",custom_palette_2groups, 10, "Factor2 : Blood host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor2", "Bacteria",custom_palette_2groups, 10, "Factor2 : Bacteria"))
 
-plot_top_weights(MOFArun, view = "Nasal", factor = 3, nfeatures = 20)
-plot_top_weights(MOFArun, view = "Blood", factor = 3, nfeatures = 20)
-plot_top_weights(MOFArun, view = "Bacteria", factor = 3, nfeatures = 20)
+(MOFAfactorloadings(MOFArun, "Factor3", "Nasal", custom_palette_2groups, 10, "Factor3 : Nasal host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor3", "Blood",custom_palette_2groups, 10, "Factor3 : Blood host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor3", "Bacteria",custom_palette_2groups, 10, "Factor3 : Bacteria"))
 
-# Plot loadings for each factor
-(plot.host.loadings.factor1 <- plot_top_weights(MOFArun, view = "Nasal", factor = 1, nfeatures = 10) +
-    geom_segment(aes_string(xend = "feature_id"), size = 2, yend = 0, col = "grey") +
-    geom_point(size = 6, col = c(rep(custom_palette_2groups[2], 10))) +
-    scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) +
-    theme(axis.text.y = element_text(hjust = 1)))
-
-(plot.host.loadings.factor1 <- plot_top_weights(MOFArun, view = "Blood", factor = 1, nfeatures = 10) +
-    geom_segment(aes_string(xend = "feature_id"), size = 2, yend = 0, col = "grey") +
-    geom_point(size = 6, col = c(rep(custom_palette_2groups[2], 10))) +
-    scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) +
-    theme(axis.text.y = element_text(hjust = 1)))
-
-(plot.host.loadings.factor1 <- plot_top_weights(MOFArun, view = "host.nasal", factor = 1, nfeatures = 10) +
-    geom_segment(aes_string(xend = "feature_id"), size = 2, yend = 0, col = "grey") +
-    geom_point(size = 6, col = c(rep(custom_palette_2groups[2], 10))) +
-    scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) +
-    theme(axis.text.y = element_text(hjust = 1)))
-
-(plot.bact.loadings.factor1 <- plot_top_weights(MOFArun, view = "Bacteria", factor = 1, nfeatures = 10) +
-    geom_segment(aes_string(xend = "feature_id"), size = 2, yend = 0, col = "grey") +
-    geom_point(size = 6, col = c(rep(custom_palette_2groups[2], 4), rep(custom_palette_2groups[1], 6))) +  
-    scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) +
-    theme(axis.text.y = element_text(hjust = 1)))
-
-(plot.host.loadings.factor1 <- plot_top_weights(MOFArun, view = "host", factor = 3, nfeatures = 10) +
-    geom_segment(aes_string(xend = "feature_id"), size = 2, yend = 0, col = "grey") +
-    geom_point(size = 6, col = "black") +
-    scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) +
-    theme(axis.text.y = element_text(hjust = 1)))
-
-(plot.bact.loadings.factor1 <- plot_top_weights(MOFArun, view = "bact", factor = 3, nfeatures = 10) +
-    geom_segment(aes_string(xend = "feature_id"), size = 2, yend = 0, col = "grey") +
-    geom_point(size = 6, col = "black") +  
-    scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) +
-    theme(axis.text.y = element_text(hjust = 1)))
+(MOFAfactorloadings(MOFArun, "Factor4", "Nasal", custom_palette_2groups, 10, "Factor4 : Nasal host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor4", "Blood",custom_palette_2groups, 10, "Factor4 : Blood host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor4", "Bacteria",custom_palette_2groups, 10, "Factor4 : Bacteria"))
 ```
 
 #### 5) Key host genes-microbial correlations
 
 ```{r eval=T, warning=F, cache=T}
-# Extract top features from host and bact
-weights.host <- as.matrix(get_weights(MOFArun, scale=FALSE, abs=FALSE)$host)
-weights.host <- abs(as.data.frame(sweep(weights.host, MARGIN=2, STATS=colMaxs(abs(weights.host)),"/")))
-weights.host.top10 <- rownames(weights.host[order(abs(weights.host$Factor1),decreasing = TRUE),])[1:10]
-weights.bact <- as.matrix(get_weights(MOFArun, scale=FALSE, abs=FALSE)$bact)
-weights.bact <- abs(as.data.frame(sweep(weights.bact, MARGIN=2, STATS=colMaxs(abs(weights.bact)),"/")))
-weights.bact.top10 <- rownames(weights.bact[order(abs(weights.bact$Factor1),decreasing = TRUE),])[1:10]
-
-# Select patients for which both bact and host data (nasal and blood) are available
+# Select patients for which both host data (nasal and blood) are available
 table(complete.cases(omicsmae))
 table(complete.cases(omicsmae[, , 1:2]))
-bact.host.mae <- omicsmae[, complete.cases(omicsmae[, , 1:2]), ]
+nasal.blood.mae <- omicsmae[, complete.cases(omicsmae[, , 1:2])]
 
 # Subset blood and nasal host data for matching pairs
-#nasal.blood.matching <-
+common <- intersect(colnames(experiments(omicsmae)[[1]]), colnames(experiments(omicsmae)[[2]]))
+omicsmae.nasal <- experiments(omicsmae)[[1]][, colnames(experiments(omicsmae)[[1]]) %in% common]
+omicsmae.blood <- experiments(omicsmae)[[2]][, colnames(experiments(omicsmae)[[2]]) %in% common]
+
 ```
 
 #### 6) Key host genes-microbial correlations with age

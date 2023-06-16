@@ -1,9 +1,10 @@
-########################################### MICROBIOME ############################################
+###############################################################################################
+########################################### MICROBIOME ########################################
+###############################################################################################
 
 # Transform phyloseq object into dataframes
 SampleDataframe <- function(phylo) {return(as(sample_data(phylo), 'data.frame'))}
 OTUDataframe <- function(phylo) {return(as.matrix(data.frame(otu_table(phylo))))}
-
 
 # Add ASV name based on the highest taxonomic class 
 highest_taxClass <- function (x) {
@@ -48,7 +49,7 @@ ps_drop_incomplete <- function(ps, vars = NA, verbose = FALSE) {
   df <- SampleDataframe(ps)
   
   # If no specific variables are specified, use all sample variables in the phyloseq object
-  if (identical(vars, NA)) vars <- phyloseq::sample_variables(ps)f
+  if (identical(vars, NA)) vars <- phyloseq::sample_variables(ps)
   
   # Subset the data.frame to only include the specified sample variables
   df_sub <- df[, vars, drop = FALSE]
@@ -234,7 +235,7 @@ BoxplotMetadataAge <- function(phylo, parameter, title, xaxis, yaxis, palette) {
                         TimePoint=c(0, 3, 6, 12))
   # Create the plot with ggplot2
   plot <- ggplot(df, aes(x = TimepointSimplified, y = as.numeric(df[, parameter]))) +
-    geom_line(data=Medians, aes(x = TimePoint, y = Median), color = adjustcolor(palette, alpha = 0.5), size = 18) +
+    geom_line(data=Medians, aes(x = TimePoint, y = Median), color = adjustcolor(palette, alpha = 0.5), size = 5) +
     geom_boxplot(aes(group = as.factor(TimepointSimplified)), fill = "white", color = "white", width = 2, outlier.shape = NA) +
     geom_boxplot(aes(group = as.factor(TimepointSimplified), fill = as.factor(TimepointSimplified), color = as.factor(TimepointSimplified)), width = 2, outlier.shape = NA) +
     # Add points for each group with jitter
@@ -463,24 +464,6 @@ DAtesting <- function(phylo, variables, model, level) {
   return(meco)
 }
 
-mecoAbundance <- function(phylo, variable, level, input_features) {
-  
-  # Remove samples with missing data in the specified parameter
-  phylo <- ps_drop_incomplete(phylo, variable)
-  
-  # Convert phyloseq object to meco object
-  meco <- phyloseq2meco(phylo)
-  
-  # Tidy the taxonomic table
-  meco$tax_table <- tidy_taxonomy(meco$tax_table)
-  
-  # Perform classification using the LINDA method
-  meco <- trans_abund$new(dataset = meco, groupmean = variable, taxrank = level, input_taxaname = input_features)
-  
-  # Return the results of classification as a data frame
-  return(meco)
-}
-
 # Top features
 DAtestingToptaxa <- function(meco, comparison, number_features) {
   
@@ -536,51 +519,6 @@ DAtestingPlotBar <- function(meco, comparison, palette, number_features, title) 
   return(p)
 }
 
-
-
-# Record rf number of DA features
-DAfeaturesRf <- function(phylo, paramlist, typeoflist = c('classification', 'regression'), level = 'ASV') {
-  # Create a data frame to store the number of DA features
-  df <- data.frame(nbDAfeatures = rep(NA, length(paramlist)))
-  
-  # Loop through each parameter in the paramlist
-  for (i in 1:length(paramlist)) {
-    # If the parameter is for classification
-    if (typeoflist[i] == 'classification') {
-      # Try running the DArf_classification function with the parameter
-      t <- try(DArf_classification(phylo, paramlist[i], level))
-      # If there is an error, set the number of DA features to 0
-      if ('try-error' %in% class(t)) {
-        df[i, ] <- 0
-      } else {
-        # If there is no error, run the DArf_classification function with the parameter and store the number of DA features
-        rf <- DArf_classification(phylo, paramlist[i], level)
-        df[i, ] <- nrow(rf)
-      }
-    }
-    
-    # If the parameter is for regression
-    if (typeoflist[i] == 'regression') {
-      # Try running the DArf_regression function with the parameter
-      t <- try(DArf_regression(phylo, paramlist[i], level))
-      # If there is an error, set the number of DA features to 0
-      if ('try-error' %in% class(t)) {
-        df[i, ] <- 0
-      } else {
-        # If there is no error, run the DArf_regression function with the parameter and store the number of DA features
-        rf <- DArf_regression(phylo, paramlist[i], level)
-        df[i, ] <- nrow(rf)
-      }
-    }
-  }
-  
-  # Add the parameter list as a column to the data frame
-  df$Covariate <- paramlist
-  
-  # Return the data frame
-  return(df)
-}
-
 # Redundancy analysis for variables selection
 dbRDAselection <- function(phylo, variables, distance='wunifrac', direction='both') {
   # Remove samples with missing values for the specified variables
@@ -601,7 +539,9 @@ dbRDAselection <- function(phylo, variables, distance='wunifrac', direction='bot
   return(select$anova)
 }
 
-###################################### GENE EXPRESSION ############################################
+###############################################################################################
+###################################### GENE EXPRESSION ########################################
+###############################################################################################
 
 # Longitudinal boxplots
 LongitudinalBoxplots <- function(data, labels, title, ylab) {
@@ -654,48 +594,6 @@ PlotVolcanoGenes <- function(DE_matrix, Direction, palette, title) {
     xlim(c(-max(abs(DE_matrix$logFC)), max(abs(DE_matrix$logFC))))
   
   return(plot)
-}
-
-# Plot cell proportions
-PlotCellProportions <- function(df, celltype, palette){
-  # Convert the cell type column to numeric
-  df$celltype <- as.numeric(df[,celltype])
-  # Get the maximum value of the cell type column for y-axis limits
-  max <- max(df$celltype)
-  # Create a ggplot object with a boxplot, jittered points, and significance bars
-  plot <- ggplot(df, aes(x=Group, y=celltype)) +
-    geom_boxplot(aes(x=Group, y=celltype), width=0.5, outlier.shape=NA, col=adjustcolor(palette, alpha=1), fill=adjustcolor('white', alpha=1)) +
-    geom_boxplot(aes(x=Group, y=celltype), width=0.5, outlier.shape=NA, col=adjustcolor(palette, alpha=1), fill=adjustcolor(palette, alpha=0.25)) +
-    geom_point(aes(y=celltype, fill=Group, color=Group), size=2, shape=21, position=position_jitter(0.1), stroke=0.25) +
-    # Add manual fill and color scales using the provided palette
-    scale_fill_manual(values=adjustcolor(palette, alpha=0.5)) +
-    scale_color_manual(values=adjustcolor(palette, alpha=1)) +
-    # Add significance bars with specified comparisons and significance levels
-    geom_signif(comparisons=list(c('Yes','No'), step_increase=0.2), map_signif_level=c('***'=0.001, '**'=0.01, '*'=0.05)) +
-    ggtitle(celltype) + xlab('') + ylab(paste(celltype, '%')) + theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)) +
-    # Set y-axis limits to the maximum cell type percentage plus 10%
-    ylim(0,(max+max*0.1))
-  return(plot)
-}
-
-# Plots for continuous metadata
-PlotCellProportionsAge <- function(df, celltype, palette){
-  # Convert the cell type values to numeric
-  df$celltype <- as.numeric(df[,celltype])
-  
-  # Create a scatter plot with jittered points and a linear regression line for each group
-  plot <- ggplot(df, aes(x=Age, y=celltype)) +
-    geom_point(aes(x=Age, y=celltype, fill=Group, color=Group),
-               size=2, shape=21,  position=position_jitterdodge(jitter.width = 0.5, jitter.height = 0.1), stroke=0.25) + # plot points with fill and color by Group, and jitter them to avoid overlap
-    geom_smooth(aes(x=Age, y=celltype, fill=Group, color=Group), method='lm', level=0.8) + # add linear regression lines with fill and color by Group
-    geom_boxplot(aes(group=interaction(Group, Age), color=Group, fill=Group), outlier.shape=NA, width=0.5) +
-    scale_fill_manual(values=adjustcolor(palette, alpha=0.5))  + # set fill colors with alpha value
-    scale_x_continuous(breaks=c(0, 3, 6, 9, 12, 15, 18)) + # set x-axis breaks
-    scale_color_manual(values=adjustcolor(palette, alpha=1)) + # set color values with alpha value
-    ggtitle(celltype) + xlab('Age (months)') + ylab(celltype) + # set title and labels for plot
-    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)) # remove legend
-  
-  return(plot) # return plot object
 }
 
 # Transform non-numeric data into numeric
@@ -861,45 +759,104 @@ PlotPathfindR <- function(pathways_table, palette, number_pathways, min_genecoun
   return(p)
 }
 
-# Save pathway of a given module
-ModulePathway <- function(module_number) {
-  
-  # Save current wd
-  initialWD <- getwd()
-  setwd('Figures/Individual/')
-  
-  # Get gene IDs of the genes belonging to the module
-  geneIDs <- names(which(net$colors == module_number))
-  
-  # Filter the DE_Group data to get the logFC values of the genes belonging to the module
-  logFC <- DE_Group[DE_Group$ID %in% geneIDs,]
-  
-  # Convert gene symbols to Entrez IDs using the org.Hs.eg.db database
-  entrezIDs <- bitr(logFC$ID, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = "org.Hs.eg.db")
-  
-  # Rename the final data frame with the Entrez IDs as the row names
-  final <- logFC$logFC
-  names(final) <- entrezIDs$ENTREZID
-  
-  # Get the KEGG pathway IDs for the given module
-  pathwayIDs <- sub(".*KEGG.", "", enrich.df[enrich.df$class == paste0("ME", module_number), ]$dataSetID)
-  print(pathwayIDs)
-  
-  # Generate the pathway visualization using pathview
-  pathview(gene.data = final, pathway.id = pathwayIDs, kegg.native = TRUE, key.pos = "bottomleft", out.dir = 'Figures/',
-           cpd.lab.offset = 0, cex = 0.65, afactor = 5, res = 700, low = "lightsalmon1", mid = "lightsalmon2", 
-           high = "indianred", limit = list(gene = c(min(final), max(final))), file.name = output_path)
-  pathview(gene.data = final, pathway.id = pathwayIDs, kegg.native = FALSE, key.pos = "bottomleft", out.dir = 'Figures/',
-           cpd.lab.offset = 0, cex = 0.65, afactor = 5, res = 700, low = "lightsalmon1", mid = "lightsalmon2", 
-           high = "indianred", limit = list(gene = c(min(final), max(final))), file.name = output_path)
-  
-  # Reset woorking directory
-  setwd(initialWD)
-}
-
+###############################################################################################
 ###################################### MULTI-OMICS ############################################
+###############################################################################################
+
+# Plot variance explained
+MOFAvarianceexplained <- function(MOFArun, palette, title) {
+  r2f <- as.data.frame(melt(MOFArun@cache$variance_explained$r2_per_factor[[1]]))
+  # Create the plot
+  p <- ggplot(r2f, aes(x = Var1, y = value, color = Var2, fill = Var2)) +
+    geom_bar(position='stack', stat='identity') +
+    scale_fill_manual(values=adjustcolor(palette, alpha=0.75)) +
+    scale_color_manual(values=adjustcolor(palette, alpha=1)) +
+    labs(x='MOFA+ factor', y='% of variance explained') +
+    ggtitle(title) +
+    theme(legend.position = c(1,0),
+          legend.box.background = element_rect(), 
+          text = element_text(size = 12),
+          legend.title = element_blank(),
+          legend.text = element_text(size = 10),
+          legend.key.size = unit(0.5, "cm")) +
+    guides(alpha = "none")
+  return(p)}
+
+# Plot top lodings for a given factor of a given view
+MOFAfactorloadings <- function(MOFArun, factor, omics, palette, number_features, title){
+  
+  # Get factor values
+  df <- get_weights(MOFArun, scale = TRUE)[[omics]]
+  filtered_df <- as.data.frame(df[ ,factor])
+  filtered_df$Feature <- rownames(filtered_df)
+  filtered_df <- filtered_df[order(abs(filtered_df[,1]), decreasing = TRUE), ]
+  colnames(filtered_df) <- c("Factor", "Feature")
+  
+  # Add direction
+  filtered_df$Direction <- ifelse(filtered_df$Factor < 0, "-", "+")
+
+  # Select the top number_features and sort by value
+  filtered_df <- filtered_df[1:number_features, ]
+  filtered_df <- filtered_df[order(filtered_df$Factor), ]
+  
+  # Create the barplot
+  p <- ggplot(filtered_df, aes(x = factor(Feature, levels = unique(filtered_df$Feature)), y = Factor, 
+                               color = Direction, fill = Direction, alpha = 0.5)) +
+    geom_bar(stat = "identity") +
+    scale_fill_manual(values=adjustcolor(palette, alpha=0.5)) +
+    scale_color_manual(values=adjustcolor(palette, alpha=1)) +
+    coord_flip() +
+    labs(x = "Feature", y = factor) +
+    ggtitle(title) +
+    theme(legend.position = c(1,0),
+          legend.box.background = element_rect(), 
+          text = element_text(size = 12),
+          legend.title = element_blank(),
+          legend.text = element_text(size = 10),
+          legend.key.size = unit(0.5, "cm")) +
+    guides(alpha = "none")
+  return(p)}
+
+# Plot MOFA values of a given factor with age
+MOFAplotAge <- function(MOFArun, factor, palette, title){
+  
+  # Get factor values
+  df <- as.data.frame(get_factors(MOFArun, scale = TRUE)[[1]])
+  df <- as.data.frame(df[,factor])
+  colnames(df) <- "Factor"
+  df$TimepointSimplified<- samples_metadata(MOFArun)[,"TimepointSimplified"]
+  Medians <- data.frame(Median=c(median(df[df$TimepointSimplified == 0, "Factor"]), median(df[df$TimepointSimplified == 3, "Factor"]),
+                                 median(df[df$TimepointSimplified == 6, "Factor"]), median(df[df$TimepointSimplified == 12, "Factor"])),
+                        TimePoint=c(0, 3, 6, 12))
+  # Create the plot with ggplot2
+  plot <- ggplot(df, aes(x = TimepointSimplified, y = Factor)) +
+    geom_line(data=Medians, aes(x = TimePoint, y = Median), color = adjustcolor(palette, alpha = 0.5), size = 5) +
+    geom_boxplot(aes(group = as.factor(TimepointSimplified)), fill = "white", color = "white", width = 2, outlier.shape = NA) +
+    geom_boxplot(aes(group = as.factor(TimepointSimplified), fill = as.factor(TimepointSimplified), color = as.factor(TimepointSimplified)), width = 2, outlier.shape = NA) +
+    # Add points for each group with jitter
+    geom_point(aes(fill = as.factor(TimepointSimplified), color = as.factor(TimepointSimplified)), size = 2, shape = 21, stroke = 0.25,
+               position = position_jitterdodge(jitter.width = 2, jitter.height = 0.02)) +
+    # Set the fill and color scales with the given color palette
+    scale_fill_manual(values = adjustcolor(palette, alpha = 0.5))  +
+    scale_color_manual(values = adjustcolor(palette, alpha = 1)) +
+    # Set the x-axis breaks to show the time points
+    scale_x_continuous(breaks = c(0, 3, 6, 9, 12, 15)) +
+    # Add the title, x-axis label, and y-axis label
+    ggtitle(title) + xlab("Age") + ylab(factor) +
+    # Add a text annotation with the sample sizes for each group
+    annotate('text', x = 12, y = -0.5,
+             label = paste0('1 week n = ', table(df$TimepointSimplified)[1], '\n', 
+                            '3 months n = ', table(df$TimepointSimplified)[2], '\n',
+                            '6 months n = ', table(df$TimepointSimplified)[3], '\n',
+                            '12 months n = ', table(df$TimepointSimplified)[4])) +
+    # Remove the legend
+    theme(legend.position = "none", text=element_text(size=12))
+  
+  # Return the plot
+  return(plot)}
+
 # Boxplots for metadata
-BoxplotMetadataMOFAfactor <- function(MOFArun, factor, parameter, title, palette, paletteboxplot) {
+BoxplotBinaryMOFAfactor <- function(MOFArun, factor, parameter, title, palette, paletteboxplot) {
   
   # Extract factor values and metadata information from the MOFA object
   MOFA <- MOFArun
@@ -947,14 +904,14 @@ BoxplotMetadataMOFAfactor <- function(MOFArun, factor, parameter, title, palette
     scale_color_manual(values = adjustcolor(palette, alpha = 1)) +
     
     # Add significance labels using a Wilcoxon test and adjust the font size based on the significance level
-    #geom_signif(
-     # test = 'wilcox.test',
-      #comparisons = list(
-       # c(levels(as.factor(df.complete$Parameter))[1],levels(as.factor(df.complete$Parameter))[2]),
-        #step_increase = 0.2
-     # ),
-      #map_signif_level = c('***' = 0.001, '**' = 0.01, '*' = 0.05)
-    #) +
+    geom_signif(
+      test = 'wilcox.test',
+      comparisons = list(
+        c(levels(as.factor(df.complete$Parameter))[1],levels(as.factor(df.complete$Parameter))[2]),
+        step_increase = 0.2
+      ),
+      map_signif_level = c('***' = 0.001, '**' = 0.01, '*' = 0.05)
+    ) +
     
     # Set the plot title and axis labels
     ggtitle(title) +
@@ -969,37 +926,15 @@ BoxplotMetadataMOFAfactor <- function(MOFArun, factor, parameter, title, palette
   return(plot)
 }
 
-# Module connectivity
-plotModuleConnectivity <- function(connectivity_matrix, module_number, custom_palette, title, immune = FALSE) {
-  # Convert connectivity matrix to a data frame for manipulation
-  modules.connectivity.df <- as.data.frame(connectivity_matrix)
-  
-  # Subset data for the specified module and plot
-  modules.connectivity.df.module <- modules.connectivity.df[modules.connectivity.df$Module == paste0("ME", module_number), ]
-  
-  # Add label column based on conditions, if immune == TRUE
-  if (immune) {
-    modules.connectivity.df.module$label <- ifelse(modules.connectivity.df.module$k > max(modules.connectivity.df.module$k)/2 & modules.connectivity.df.module$Immune == "Yes", modules.connectivity.df.module$ID, NA)
-  } else {
-    modules.connectivity.df.module$label <- ifelse(modules.connectivity.df.module$k > max(modules.connectivity.df.module$k)/2, modules.connectivity.df.module$ID, NA)}
-  
-  # Create plot using ggplot2
-  plot <- ggplot(modules.connectivity.df.module, aes(x = k, y = -log10(adj.P.Val), label = label)) +
-    # Add linear regression line in grey
-    geom_smooth(method = "lm", col = "grey") +
-    # Add points with size and shape based on immune status
-    geom_point(aes(fill = k, color = k), shape = ifelse(modules.connectivity.df.module$Immune == "Yes", 22, 21), size = 3, stroke = 0.25) +
-    # Add labels with repulsion to prevent overlap
-    geom_label_repel(aes(fill = k, color = k), color = 'black', label.size = 0, 
-                     label.r = 0.5, size = 4, label.padding = 0.25, max.overlaps = 30, segment.size = 0.25, segment.alpha = 0.95, segment.color = "grey") +
-    # Set custom color palettes for fill and color
-    scale_fill_gradient2(low = "grey80", mid = "grey80", high = custom_palette, midpoint = max(modules.connectivity.df.module$k)/4) +
-    scale_color_gradient2(low = "grey80", mid = "grey80", high = custom_palette, midpoint = max(modules.connectivity.df.module$k)/4) +
-    # Add correlation coefficient as a label
-    geom_cor(method = "pearson") +
-    # Add title and axis labels, and remove legend
-    ggtitle(title) + xlab("Intramodular connectivity (k)") + ylab("Disease significance (-log10(adj. p-value))") + 
-    theme(legend.position = "none", text = element_text(size = 12))
-  
-  return(plot)
-}
+
+
+
+
+
+
+
+
+
+
+
+
