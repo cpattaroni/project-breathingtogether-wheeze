@@ -696,7 +696,7 @@ fung.long.age.meco <- DAtesting(fung.long, c("TimepointFactor", "Patient"), "Tim
 sort(table(as.data.frame(fung.long.age.meco$res_diff[fung.long.age.meco$res_diff$Significance!="ns",])$Comparison), decreasing = TRUE)
 
 # Barplot with top results
-(bact.long.age.bar <- DAtestingPlotBar(bact.long.age.meco, "T4-1year - T1-1week", c(custom_palette_age[1], custom_palette_age[4]), 20, "Bacteria DA testing - top 20 features"))
+(bact.long.age.bar <- DAtestingPlotBar(bact.long.age.meco, "T4-1year - T1-1week", c(custom_palette_age[1], custom_palette_age[4]), 15, "Longitudunal cohort : Bacteria DA testing with age"))
 ```
 
 ### MICROBIOME COVARIATES INVESTIGATION
@@ -858,13 +858,14 @@ Differential abundance testing is performed for each covariate individually and 
 ASVs reported in a dataframe.
 
 ```{r eval=T, warning=F, cache=T}
-typeof <- c("classification", "regression", "regression", "regression", "classification", "classification",
-            "classification", "classification", "classification", "classification", "regression", "classification",
-            "classification", "classification", "classification", "regression", "regression", "classification", "regression")
-bact.1Y.covariates <- DAfeaturesRf(bact.1Y, all, typeof, "ASV")
-fung.1Y.covariates <- DAfeaturesRf(fung.1Y, all, typeof, "ASV")
-bact.1Y.covariates <- rbind(bact.1Y.covariates, DAfeaturesRf(bact.wheeze.1Y, wheeze, rep("classification", 4), "ASV"))
-fung.1Y.covariates <- rbind(fung.1Y.covariates, DAfeaturesRf(fung.wheeze.1Y, wheeze, rep("classification", 4), "ASV"))
+bact.1Y.nomissing <- ps_drop_incomplete(bact.1Y, all)
+bact.DA.covariates <- DAtesting(bact.1Y.nomissing,"~Colds+AbxSinceBorn1YEAR", "ASV")
+
+
+bact.1Y.covariates <- DAfeaturesCounts(bact.1Y, env, "ASV")
+fung.1Y.covariates <- DAfeaturesCounts(fung.1Y, all, "ASV")
+bact.1Y.covariates <- rbind(bact.1Y.covariates, DAfeaturesCounts(bact.wheeze.1Y, wheeze, "ASV"))
+fung.1Y.covariates <- rbind(fung.1Y.covariates, DAfeaturesCounts(fung.wheeze.1Y, wheeze, "ASV"))
 ```
 
 ```{r eval=T, warning=F, cache=T}
@@ -1428,7 +1429,7 @@ ggsave("../Figures/Individual/Host_PCA_Age.pdf", plot.nasal.PCA.Age, width = 20,
 ```{r eval=T, warning=F, cache=T}
 # Set parameters
 FDR_param <- 0.1
-FC_param <- 0.1
+FC_param <- 0.25
 
 # Choose design
 design <- model.matrix(~TimepointMonth, data=host.nasal.long$targets)
@@ -1461,11 +1462,11 @@ ggsave("../Figures/Individual/Long_Volcano_Age.pdf", plot.volcano.Age, width=30,
 write.xlsx(DE_Age, "../Outputs/Age_DE_results.xlsx", row.names=FALSE)
 ```
 
-#### 3) Pathway analysis
+#### 3) Pathway analysis of DE genes
 
 ```{r eval=T, warning=F, cache=T}
-host.long.pathway <- PathfindRGOKEGG(DE_Age, 0.05, 0.05, immune = TRUE)
-(host.long.pathway.plot <- PlotPathfindR(host.long.pathway, c(custom_palette_age[1], custom_palette_age[2]), number_pathways = 20, min_genecounts = 2, "Host"))
+host.long.pathway <- PathfindRGOKEGG(DE_Age, FDR_param, 0.05, immune = TRUE, do_downregulated = TRUE)
+(host.long.pathway.plot <- PlotPathfindR(host.long.pathway, c(custom_palette_age[1], custom_palette_age[4]), number_pathways = 10, min_genecounts = 3,  "Immune pathway analysis : Host nasal longitudinal cohort"))
 ```
 
 ### HOST DISEASE INVESTIGATION
@@ -1579,149 +1580,8 @@ write.xlsx(DE_Group_blood, "../Outputs/Group_DE_blood_results.xlsx", row.names=F
 #### 4) Pathway analysis of DE genes
 
 ```{r}
-host.nasal.disease.pathway <- PathfindRGOKEGG(DE_Group_nasal, 0.1, 0.05, 3, immune = TRUE)
-PlotPathfindR(host.nasal.disease.pathway, custom_palette_2groups, 20, "Test")
-```
-
-#### 5) Manual gene clustering
-
-```{r}
-# Compute the distance matrix
-genes.dist <- as.dist(1 - cor(t(selected.genes.mat), method = "pearson"))
-
-# Perform hierarchical clustering for different numbers of clusters
-wcss <- vector("numeric", 10)
-for (k in 1:10) {
-  row_hclust <- hclust(genes.dist, method = "ward.D")
-  cluster_assignments <- cutree(row_hclust, k = k)
-  # Calculate within-cluster sum of squares (WCSS)
-  wcss[k] <- sum((genes.dist^2) * (cluster_assignments == rep(1:k, each = nrow(selected.genes.mat))))
-}
-
-# Plot the WCSS values
-plot(1:10, wcss, type = "b", pch = 19, xlab = "Number of clusters", ylab = "WCSS")
-which(diff(wcss) < mean(diff(wcss))) + 1 # 2 or 3 clusters are optimal
-
-# Clustering of genes
-genes.hclust <- hclust(genes.dist, method = "ward.D")
-cluster.assignments <- cutree(genes.hclust, k = 3)
-cluster1.genes <- names(which(cluster.assignments==1))
-cluster2.genes <- names(which(cluster.assignments==2))
-cluster3.genes <- names(which(cluster.assignments==3))
-```
-
-```{r eval=T, warning=F, cache=T}
-# Convert symbols to EntrezIDs
-genes.cluster1.entrez <- bitr(cluster1.genes, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
-genes.cluster2.entrez <- bitr(cluster2.genes, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
-genes.cluster3.entrez <- bitr(cluster3.genes, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
-all.genes.entrez <- bitr(DE_Group_nasal_immune$ID, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db")
-
-(KEGG <- enrichMKEGG(gene=genes.cluster1.entrez$ENTREZID, universe = all.genes.entrez$ENTREZID))
-
-
-# Create dataframe with DE information
-path.df <- data.frame(Symbol=DE_Group_nasal_immune$ID, logFC=DE_Group_nasal_immune$logFC, DE_Group_nasal_immune$adj.P.Val)
-iternb <- 1
-
-# Run pathfindR with built in databases
-library(org.Hs.eg.db)
-path.output.GOBP <- run_pathfindR(path.df, p_val_threshold = 0.1, enrichment_threshold = 0.05,
-                             output_dir = '../Outputs/Disease_pathfindR_GO-BP', gene_sets = "GO-BP",
-                             iterations = iternb, n_processes = 4)
-
-path.output.KEGG <- run_pathfindR(path.df, p_val_threshold = 0.1, enrichment_threshold = 0.05,
-                             output_dir = '../Outputs/Disease_pathfindR_KEGG', gene_sets = "KEGG",
-                             iterations = iternb, n_processes = 4)
-
-# Add pathway origin to the name
-path.output.GOBP$Term_Description <- paste("GO-BP:", path.output.GOBP$Term_Description)
-path.output.KEGG$Term_Description <- paste("KEGG:", path.output.KEGG$Term_Description)
-
-# Combine all pathways results
-path.output.all <- rbind(path.output.GOBP, path.output.KEGG)
-
-# Add number of terms per pathway and filter
-path.output.all$GeneCounts <- sapply(strsplit(paste(path.output.all$Up_regulated, path.output.all$Down_regulated, sep = ","), ","), function(x) sum(x != ""))
-path.output.all <- path.output.all[path.output.all$GeneCounts > 2,]
-
-# Plots
-(pathway.enrich.plot <- enrichment_chart(path.output.all, top_terms = 20) + scale_color_gradient(low="lightsalmon1", high="indianred"))
-(pathway.upset.plot <- UpSet_plot(path.output.all, use_description = TRUE, num_terms = 20,
-                                  low = custom_palette_2groups[1], mid = "yellow", high = custom_palette_2groups[2]) + theme(legend.position="none"))
-(pathway.network.plot <- term_gene_graph(path.output.all, num_terms = 15, use_description = TRUE, node_size = "num_genes") +
-    scale_color_manual(values=c("grey", custom_palette_2groups[2], custom_palette_2groups[1])) +
-    theme(legend.position = "bottom"))
-
-# Save plots
-ggsave("../Figures/Individual/1Y_pathway.pdf",
-       pathway.network.plot,
-       width=20, height=20, units="cm", useDingbats=FALSE)
-
-# Save pahtway results
-write.xlsx(path.output.all, "../Outputs/1Y_Disease_host_pathways.xlsx", row.names=FALSE)
-```
-
-#### 5) Literature-based pathways
-
-```{r eval=T, warning=F, cache=T}
-# Load literature based info
-literature.pathways <- read.xlsx("../Databases/DE genes list (1).xlsx", sheetIndex = 1)
-
-# Select DE modules
-genes.mat <- as.matrix(host.nasal.1Y$E)
-#selected.genes.mat <- genes.mat[rownames(genes.mat) %in% literature.pathways[!is.na(literature.pathways$HeatmapCluster),]$ID,]
-selected.genes.mat <- genes.mat[rownames(genes.mat) %in% DE_Group_nasal_immune$label,]
-
-# Reorder pathways
-pathways <- as.vector(literature.pathways[match(rownames(selected.genes.mat), literature.pathways$ID),]$HeatmapCluster)
-names(pathways) <- "Pathway"
-
-# Prepare annotations
-colAnn <- data.frame(Group=host.nasal.1Y$targets$Group)
-colors <- list('Group'=c('Yes'=custom_palette_2groups[1], 'No'=custom_palette_2groups[2]))
-colAnn <- HeatmapAnnotation(df=data.frame(Group=host.nasal.1Y$targets$Group),
-                            col=list('Group'=c('Yes'=custom_palette_2groups[2], 'No'=custom_palette_2groups[1])))
-
-rowAnn <- rowAnnotation('Pathway'=as.vector(pathways))
-
-# Create and save heatmap
-pdf('../Figures/Individual/1Y_Heatmap_selected_genes.pdf', width = 9, height = 7)
-Heatmap(t(scale(t(selected.genes.mat))),
-        top_annotation = colAnn,
-        show_column_names = FALSE,
-        col = circlize::colorRamp2(seq(-4, 4, length.out = 100), colorRampPalette(c('cadetblue', 'black', 'lightsalmon'))(100)),
-        #row_split = pathways,
-        #right_annotation = rowAnn,
-        row_km = 3,
-        clustering_distance_rows = 'pearson',
-        clustering_distance_columns = 'pearson',
-        clustering_method_columns = 'ward.D',
-        clustering_method_rows = 'ward.D')
-dev.off()
-
-
-
-# Run pathway analyses on gene clusters
-cluster1.pathfindR <- RunpathfindR(cluster1.genes, 2, 0.1)
-cluster2.pathfindR <- RunpathfindR(cluster2.genes, 2, 0.1)
-cluster3.pathfindR <- RunpathfindR(cluster3.genes, 2, 0.1)
-
-# Plots
-(pathway.enrich.plot <- enrichment_chart(path.output.all, top_terms = 20) + scale_color_gradient(low="lightsalmon1", high="indianred"))
-(pathway.upset.plot <- UpSet_plot(path.output.all, use_description = TRUE, num_terms = 20,
-                                  low = custom_palette_2groups[1], mid = "yellow", high = custom_palette_2groups[2]) + theme(legend.position="none"))
-(pathway.network.plot <- term_gene_graph(cluster1.pathfindR , num_terms = 20, use_description = TRUE, node_size = "num_genes") +
-    scale_color_manual(values=c("grey", custom_palette_2groups[2], custom_palette_2groups[1])) +
-    theme(legend.position = "bottom"))
-
-(pathway.network.plot <- term_gene_graph(cluster2.pathfindR , num_terms = 20, use_description = TRUE, node_size = "num_genes") +
-    scale_color_manual(values=c("grey", custom_palette_2groups[2], custom_palette_2groups[1])) +
-    theme(legend.position = "bottom"))
-
-(pathway.network.plot <- term_gene_graph(cluster3.pathfindR , num_terms = 20, use_description = TRUE, node_size = "num_genes") +
-    scale_color_manual(values=c("grey", custom_palette_2groups[2], custom_palette_2groups[1])) +
-    theme(legend.position = "bottom"))
+host.nasal.disease.pathway <- PathfindRGOKEGG(DE_Group_nasal, FDR_param, 0.05, immune = TRUE, do_downregulated = FALSE) # No down regulated immune gene
+(host.disease.pathway.plot <- PlotPathfindR(host.nasal.disease.pathway, c(rep(custom_palette_2groups[2], 2)), number_pathways = 10, min_genecounts = 3, "Immune pathway analysis : Host nasal main cohort"))
 ```
 
 ### HOST LONGITUDINAL-DISEASE COMMONALITIES
@@ -1746,12 +1606,6 @@ wilcox.test(common.age.disease.df[common.age.disease.df$Age==3 & common.age.dise
             common.age.disease.df[common.age.disease.df$Age==3 & common.age.disease.df$Group=="No",]$CD79A)
 wilcox.test(common.age.disease.df[common.age.disease.df$Age==6 & common.age.disease.df$Group=="Yes",]$CD79A,
             common.age.disease.df[common.age.disease.df$Age==6 & common.age.disease.df$Group=="No",]$CD79A)
-wilcox.test(common.age.disease.df[common.age.disease.df$Age==0 & common.age.disease.df$Group=="Yes",]$SAP30BP,
-            common.age.disease.df[common.age.disease.df$Age==0 & common.age.disease.df$Group=="No",]$SAP30BP)
-wilcox.test(common.age.disease.df[common.age.disease.df$Age==3 & common.age.disease.df$Group=="Yes",]$SAP30BP, # significant
-            common.age.disease.df[common.age.disease.df$Age==3 & common.age.disease.df$Group=="No",]$SAP30BP)
-wilcox.test(common.age.disease.df[common.age.disease.df$Age==6 & common.age.disease.df$Group=="Yes",]$SAP30BP,
-            common.age.disease.df[common.age.disease.df$Age==6 & common.age.disease.df$Group=="No",]$SAP30BP)
 
 # Create dataframe for specific gene and test
 TBX21.long <- data.frame(Abundance=host.longw1Y$E[rownames(host.longw1Y$E) %in% "TBX21",], Group=host.longw1Y$targets$Group, AgeFactor=host.longw1Y$targets$TimepointSimplified)
@@ -1775,109 +1629,6 @@ p3 <- wilcox.test(SAP30BP.long[SAP30BP.long$AgeFactor==6,]$Abundance ~ SAP30BP.l
 (LongitudinalBoxplots(SAP30BP.long, c(round(p1$p.value, digits=2), round(p2$p.value, digits=2), round(p3$p.value, digits=2)), "SAP30BP", "SAP30BP normalised"))
 ```
 
-#### 4) Pathway analysis of DE genes
-
-```{r eval=T, warning=F, cache=T}
-# Create dataframe with DE information
-path.df <- data.frame(Symbol=DE_Age_immune$ID, logFC=DE_Age_immune$logFC, DE_Age_immune$adj.P.Val)
-iternb <- 1
-
-path.output.GOBP <- run_pathfindR(path.df, p_val_threshold = 0.1, enrichment_threshold = 0.05,
-                             output_dir = '../Outputs/Age_pathfindR_GO-BP', gene_sets = "GO-BP",
-                             iterations = iternb, n_processes = 4)
-
-path.output.KEGG <- run_pathfindR(path.df, p_val_threshold = 0.1, enrichment_threshold = 0.05,
-                             output_dir = '../Outputs/Age_pathfindR_KEGG', gene_sets = "KEGG",
-                             iterations = iternb, n_processes = 4)
-# Add pathway origin to the name
-path.output.GOBP$Term_Description <- paste("GO-BP:", path.output.GOBP$Term_Description)
-path.output.KEGG$Term_Description <- paste("KEGG:", path.output.KEGG$Term_Description)
-
-# Combine all pathways results
-path.output.all <- rbind(path.output.GOBP, path.output.KEGG)
-
-# Add number of terms per pathway and filter
-path.output.all$GeneCounts <- sapply(strsplit(paste(path.output.all$Up_regulated, path.output.all$Down_regulated, sep = ","), ","), function(x) sum(x != ""))
-path.output.all <- path.output.all[path.output.all$GeneCounts > 2,]
-
-# Plots
-(pathway.network.plot <- term_gene_graph(path.output.all, num_terms = 20, use_description = TRUE, node_size = "num_genes") +
-    scale_color_manual(values=c("grey80", custom_palette_age[3], custom_palette_age[1])) +
-    theme(legend.position = "bottom"))
-
-# Save plots
-ggsave("../Figures/Individual/Longitudinal_pathway.pdf",
-       pathway.network.plot,
-       width=20, height=20, units="cm", useDingbats=FALSE)
-
-# Save pathway results
-write.xlsx(path.output.all, "../Outputs/Longitudinal_host_pathways.xlsx", row.names=FALSE)
-```
-
-### HOST MULTI-OMICS EXPORT
-
-#### 5) Save outputs
-
-```{r eval=T, warning=F, cache=T}
-# Immune genes nasal top genes
-Host.Nasal.Immune.Genes.matrix <- host.nasal.1Y$E[rownames(host.nasal.1Y$E) %in% ImmuneDB$name,]
-colnames(Host.Nasal.Immune.Genes.matrix) <- paste0('S', host.nasal.1Y$targets$Subjectnumber)
-gene_vars <- apply(Host.Nasal.Immune.Genes.matrix, 1, var)
-sorted_genes <- order(gene_vars, decreasing = TRUE)
-top_genes <- head(sorted_genes, 1000)
-Host.Nasal.Immune.Genes.matrix <- Host.Nasal.Immune.Genes.matrix[top_genes,]
-
-# Immune genes blood
-Host.Blood.Immune.Genes.matrix <- host.dge.blood$E[rownames(host.dge.blood$E) %in% ImmuneDB$name,]
-gene_vars <- apply(Host.Blood.Immune.Genes.matrix, 1, var)
-sorted_genes <- order(gene_vars, decreasing = TRUE)
-top_genes <- head(sorted_genes, 1000)
-Host.Blood.Immune.Genes.matrix <- Host.Blood.Immune.Genes.matrix[top_genes,]
-
-# Save datasets
-saveRDS(Host.Nasal.Immune.Genes.matrix, '../Outputs/Host.Nasal.Immune.Genes.matrix.rds')
-saveRDS(Host.Blood.Immune.Genes.matrix, '../Outputs/Host.Blood.Immune.Genes.matrix.rds')
-```
-
-### ***Figure 5***
-
-```{r eval=T, warning=F, cache=T}
-(figure5af <- ggarrange(bact.ordi.long, NA, bact.long.distance,
-                        fung.ordi.long, NA, fung.long.distance,
-                        plot.PCA.Age, NA, host.long.distance,
-                        ncol=3, nrow=3,
-                        widths=c(2, 0.2, 1.2),
-                        labels=c("a","","b", "c", "", "d", "e", "", "f"),
-                        font.label=list(size=20)))
-
-(figure5gi <- ggarrange(virus.plot.detection, NA, virus.plot.details, NA, bact.long.age.bar,
-                        ncol=5, nrow=1,
-                        widths=c(2, 0.2, 2, 0.2, 3),
-                        labels=c("g","","h", "", "i"),
-                        font.label=list(size=20)))
-
-(figure5jm <- ggarrange(Moraxella.detection.plot, NA, Haemophilus.detection.plot, NA,
-                       Moraxella.survival.plot$plot, NA, Haemophilus.survival.plot$plot,
-                        ncol=7, nrow=1,
-                        widths=c(2, 0.2, 2, 0.2, 2, 0.2, 2),
-                        labels=c("j","","k", "", "l", "", "m"),
-                        font.label=list(size=20)))
-
-(figure5nq <- ggarrange(plot.volcano.Age, NA, NA, TBX21.plot,
-                        ncol=5, nrow=1,
-                        widths=c(3, 0.2, 2, 0.2, 2),
-                        labels=c("n","","o", "", "p"),
-                        font.label=list(size=20)))
-
-Figure5 <- ggarrange(figure5af, figure5gi, figure5jm, figure5nq,
-                      ncol=1,
-                      heights=c(3, 1, 1, 1))
-
-
-# Save figure
-ggsave("../Figures/Main/Figure5.pdf", Figure5, width=35, height=60, units="cm", useDingbats=FALSE)
-```
-
 # [**Multi-omics**]{.underline}
 
 #### Multi-omics parameters
@@ -1893,18 +1644,27 @@ count.omics <- 1
 
 # Prepare metadata file for longitudinal experiment
 metaS <- metadata
+
 metaS.1w <- metaS
 metaS.1w$TimepointSimplified <- 0
 rownames(metaS.1w) <- paste0("S", metaS.1w$Subjectnumber, ".week1")
+metaS.1w$Timepoint <- round(round(day(as.period(interval(start=metaS.1w$ParticipantsDateofbirth,end=metaS.1w$DateofVisitBaseline), unit="days")), digits=1)/30.437, digits=1)
+
 metaS.3m <- metaS
 metaS.3m$TimepointSimplified <- 3
 rownames(metaS.3m) <- paste0("S", metaS.3m$Subjectnumber, ".month3")
+metaS.3m$Timepoint <- round(round(day(as.period(interval(start=metaS.3m$ParticipantsDateofbirth,end=metaS.3m$DateofVisit3MTH), unit="days")), digits=1)/30.437, digits=1)
+
 metaS.6m <- metaS
 metaS.6m$TimepointSimplified <- 6
 rownames(metaS.6m) <- paste0("S", metaS.6m$Subjectnumber, ".month6")
+metaS.6m$Timepoint <- round(round(day(as.period(interval(start=metaS.6m$ParticipantsDateofbirth,end=metaS.6m$DateofVisit6MTH), unit="days")), digits=1)/30.437, digits=1)
+
 metaS.1y <- metaS
 metaS.1y$TimepointSimplified <- 12
 rownames(metaS.1y) <- paste0("S", metaS.1y$Subjectnumber, ".year1")
+metaS.1y$Timepoint <- round(round(day(as.period(interval(start=metaS.1y$ParticipantsDateofbirth,end=metaS.1y$DateofVisit1YEAR), unit="days")), digits=1)/30.437, digits=1)
+
 metaS.long <- rbind(metaS.1w, metaS.3m, metaS.6m, metaS.1y)
 
 # Prepare metadata file for longitudinal experiment
@@ -1961,6 +1721,10 @@ colnames(Host.matrix.long) <- ifelse(host.nasal.long$targets$TimepointFactor == 
                                      ifelse(host.nasal.long$targets$TimepointFactor == "T3-6months",
                                      paste0("S", host.nasal.long$targets$Subject, ".month6"),
                                      paste0("S", host.nasal.long$targets$Subject, ".year1"))))
+gene_vars <- apply(Host.matrix.long, 1, var)
+sorted_genes <- order(gene_vars, decreasing = TRUE)
+top_genes <- head(sorted_genes, 1000)
+Host.matrix.long <- Host.matrix.long[top_genes,]
 rownames(Host.matrix.long) <- make.unique(rownames(Host.matrix.long))
 
 # Create list of omics datasets
@@ -1980,13 +1744,16 @@ MOFAobject.long <- create_mofa(omicsmae.long)
 # Set parameters
 DataOptions <- get_default_data_options(MOFAobject.long)
 ModelOptions <- get_default_model_options(MOFAobject.long)
-ModelOptions$num_factors <- 4
+ModelOptions$num_factors <- 3
 TrainOptions <- get_default_training_options(MOFAobject.long)
 TrainOptions$seed <- 2
+MefistoOptions <- get_default_mefisto_options(MOFAobject.long)
+MefistoOptions$scale_cov <- TRUE
+set_covariates(MOFAobject.long, covariates = "Timepoint")
 
 # Prepare MOFA and add time information
-MOFAobject.long <- prepare_mofa(MOFAobject.long, data_options = DataOptions, model_options = ModelOptions, training_options = TrainOptions)
-MOFArun.long <- run_mofa(MOFAobject.long, outfile = "../Outputs/MOFA.long.rds", use_basilisk = FALSE, save_data = FALSE)
+MOFAobject.long <- prepare_mofa(MOFAobject.long, data_options = DataOptions, model_options = ModelOptions, training_options = TrainOptions, mefisto_options = MefistoOptions)
+MOFArun.long <- run_mofa(MOFAobject.long, use_basilisk = FALSE, save_data = FALSE)
 ```
 
 #### 3) MOFA variance and factors
@@ -1998,10 +1765,10 @@ MOFArun.long <- run_mofa(MOFAobject.long, outfile = "../Outputs/MOFA.long.rds", 
 (plot.MOFA.var.long <- MOFAvarianceexplained(MOFArun.long, custom.palette.omics1, title = "MOFA longitudinal cohort - variance explained"))
 
 # Plot top factors
-(MOFAfactorloadings(MOFArun.long, "Factor1", "Nasal", rep(custom.palette.omics1[1],2), 10, "Factor1 : Nasal host gene expression"))
-(MOFAfactorloadings(MOFArun.long, "Factor2", "Nasal", rep(custom.palette.omics1[1],2), 10, "Factor2 : Nasal host gene expression"))
-(MOFAfactorloadings(MOFArun.long, "Factor3", "Nasal", rep(custom.palette.omics1[1],2), 10, "Factor3 : Nasal host gene expression"))
-(MOFAfactorloadings(MOFArun.long, "Factor3", "Bacteria", rep(custom.palette.omics1[2],2), 10, "Factor3 : Bacteria"))
+(MOFAfactorloadings(MOFArun.long, "Factor1", "Nasal", rep(custom.palette.omics1[2],2), 10, "Factor1 : Host nasal"))
+(MOFAfactorloadings(MOFArun.long, "Factor2", "Nasal", rep(custom.palette.omics1[2],2), 10, "Factor2 : Host nasal"))
+(MOFAfactorloadings(MOFArun.long, "Factor3", "Bacteria", c(custom_palette_age[4], custom_palette_age[1]), 10, "Factor3 : Bacteria"))
+(MOFAfactorloadings(MOFArun.long, "Factor3", "Nasal", c(custom_palette_age[4], custom_palette_age[1]),  10, "Factor3 : Host nasal"))
 
 # Plot factor value with age
 (MOFAplotAge(MOFArun.long, "Factor3", custom_palette_age, "Factor3 with age"))
@@ -2072,7 +1839,7 @@ TrainOptions$seed <- 2
 
 # Run MOFA
 MOFAobject <- prepare_mofa(MOFAobject, data_options = DataOptions, model_options = ModelOptions, training_options = TrainOptions)
-MOFArun <- run_mofa(MOFAobject, outfile = "../Outputs/MOFA.rds", use_basilisk = FALSE)
+MOFArun <- run_mofa(MOFAobject, use_basilisk = FALSE, save_data = FALSE)
 ```
 
 #### 3) MOFA variance and factors
@@ -2089,21 +1856,17 @@ MOFArun <- run_mofa(MOFAobject, outfile = "../Outputs/MOFA.rds", use_basilisk = 
 (plot.factor3 <- BoxplotBinaryMOFAfactor(MOFArun, "Factor3", "Group", "Latent Factor3", custom_palette_2groups, custom_palette_2groups))
 
 # Plot factor 1 top features
-(MOFAfactorloadings(MOFArun, "Factor1", "Nasal", custom_palette_2groups, 20, "Factor1 : Nasal host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor1", "Blood", custom_palette_2groups, 10, "Factor1 : Blood host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor1", "Bacteria",custom_palette_2groups, 10, "Factor1 : Bacteria"))
+(MOFAfactorloadings(MOFArun, "Factor1", "Nasal", custom_palette_2groups, 15, "Factor1 : Nasal host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor1", "Blood", custom_palette_2groups, 15, "Factor1 : Blood host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor1", "Bacteria",custom_palette_2groups, 15, "Factor1 : Bacteria"))
 
-(MOFAfactorloadings(MOFArun, "Factor2", "Nasal", custom_palette_2groups, 10, "Factor2 : Nasal host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor2", "Blood",custom_palette_2groups, 10, "Factor2 : Blood host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor2", "Bacteria",custom_palette_2groups, 10, "Factor2 : Bacteria"))
+(MOFAfactorloadings(MOFArun, "Factor2", "Nasal", custom_palette_2groups, 15, "Factor2 : Nasal host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor2", "Blood",custom_palette_2groups, 15, "Factor2 : Blood host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor2", "Bacteria",custom_palette_2groups, 15, "Factor2 : Bacteria"))
 
-(MOFAfactorloadings(MOFArun, "Factor3", "Nasal", custom_palette_2groups, 10, "Factor3 : Nasal host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor3", "Blood",custom_palette_2groups, 10, "Factor3 : Blood host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor3", "Bacteria",custom_palette_2groups, 10, "Factor3 : Bacteria"))
-
-(MOFAfactorloadings(MOFArun, "Factor4", "Nasal", custom_palette_2groups, 10, "Factor4 : Nasal host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor4", "Blood",custom_palette_2groups, 10, "Factor4 : Blood host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor4", "Bacteria",custom_palette_2groups, 10, "Factor4 : Bacteria"))
+(MOFAfactorloadings(MOFArun, "Factor3", "Nasal", custom_palette_2groups, 15, "Factor3 : Nasal host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor3", "Blood",custom_palette_2groups, 15, "Factor3 : Blood host gene expression"))
+(MOFAfactorloadings(MOFArun, "Factor3", "Bacteria",custom_palette_2groups, 15, "Factor3 : Bacteria"))
 ```
 
 #### 5) Key host genes-microbial correlations
