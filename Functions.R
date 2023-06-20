@@ -445,6 +445,24 @@ ANOSIMunifrac <- function(phylo, design) {
   return(test)
 }
 
+# ANOSIM
+ANOSIMunifrac <- function(phylo, design) {
+  
+  # Set the random seed to 2
+  set.seed(2)
+  
+  # Set the distance metric to 'wunifrac'
+  distance <- 'wunifrac'
+  
+  # Perform an ANOSIM test using the specified design and distance metric
+  test <- adonis2(formula = as.formula(paste('phyloseq::distance(phylo, method = distance) ~', design)),
+                  data = as.data.frame(as.matrix(sample_data(phylo))), 
+                  distance = distance, dfun = vegdist, na.action = na.omit)
+  
+  # Return the test results
+  return(test)
+}
+
 # DA testing with LINDA
 DAtesting <- function(phylo, variables, model, level) {
   
@@ -518,6 +536,21 @@ DAtestingPlotBar <- function(meco, comparison, palette, number_features, title) 
     guides(alpha = "none")
   return(p)
 }
+
+# Record DA etsting results for some covariates
+DAfeaturesCounts <- function(phylo, paramlist, level = 'ASV') {
+
+  # Create a data frame to store the number of DA features
+  df <- data.frame(nbDAfeatures = rep(NA, length(paramlist)))
+  
+  # Loop through each parameter in the paramlist
+  for (i in 1:length(paramlist)) {
+    da <- DAtesting(phylo, model = paste0("~", paramlist[i]), variables = paramlist[i], level = level)
+    df[i, ] <- length(which(da$res_diff$Significance!="ns"))}
+  # Add the parameter list as a column to the data frame
+  df$Covariate <- paramlist
+    # Return the data frame
+  return(df)}
 
 # Redundancy analysis for variables selection
 dbRDAselection <- function(phylo, variables, distance='wunifrac', direction='both') {
@@ -681,7 +714,7 @@ PlotDistanceTimepoint <- function(se, title){
   return(plot)}
 
 # PathfindR on gene list
-PathfindRGOKEGG <- function(DE_table, pval_threshold, enrich_threshold, immune = FALSE){
+PathfindRGOKEGG <- function(DE_table, pval_threshold, enrich_threshold, immune = FALSE, do_downregulated = TRUE){
   if (immune == TRUE){
     DE_table <- DE_table[DE_table$Immune=="Yes",]}
   path.df <- data.frame(Symbol=DE_table$ID, logFC=DE_table$logFC, DE_table$adj.P.Val)
@@ -691,35 +724,31 @@ PathfindRGOKEGG <- function(DE_table, pval_threshold, enrich_threshold, immune =
   
   # Run pathway analysis
   path.output.KEGG.upregulated <- run_pathfindR(path.df.upregulated, p_val_threshold = pval_threshold, enrichment_threshold = enrich_threshold,
-                                    output_dir = 'Outputs/pathfindR_KEGG', gene_sets = "KEGG",
-                                    iterations = 1, n_processes = 4) 
-  
-  path.output.GO.upregulated <- run_pathfindR(path.df.upregulated, p_val_threshold = pval_threshold, enrichment_threshold = enrich_threshold,
-                                              output_dir = 'Outputs/pathfindR_GO-BP', gene_sets = "GO-BP",
-                                              iterations = 1, n_processes = 4) 
-  
-  path.output.KEGG.downregulated <- run_pathfindR(path.df.downregulated, p_val_threshold = pval_threshold, enrichment_threshold = enrich_threshold,
-                                                 output_dir = 'Outputs/pathfindR_KEGG', gene_sets = "KEGG",
-                                                 iterations = 1, n_processes = 4) 
-  
-  path.output.GO.downregulated <- run_pathfindR(path.df.downregulated, p_val_threshold = pval_threshold, enrichment_threshold = enrich_threshold,
-                                                output_dir = 'Outputs/pathfindR_GO-BP', gene_sets = "GO-BP",
+                                                output_dir = '../Outputs/pathfindR_KEGG', gene_sets = "GO-BP",
                                                 iterations = 1, n_processes = 4) 
+  
+  if (do_downregulated == TRUE){
+    path.output.KEGG.downregulated <- run_pathfindR(path.df.downregulated, p_val_threshold = pval_threshold, enrichment_threshold = enrich_threshold,
+                                                    output_dir = '../Outputs/pathfindR_KEGG', gene_sets = "GO-BP",
+                                                    iterations = 1, n_processes = 4)}
   # Add pathway origin to the name
   path.output.KEGG.upregulated$Term_Description <- paste("KEGG:", path.output.KEGG.upregulated$Term_Description)
-  path.output.GO.upregulated$Term_Description <- paste("GO-BP:", path.output.GO.upregulated$Term_Description)
-  path.output.KEGG.downregulated$Term_Description <- paste("KEGG:", path.output.KEGG.downregulated$Term_Description)
-  path.output.GO.downregulated$Term_Description <- paste("GO-BP:", path.output.GO.downregulated$Term_Description)
+
+  if (do_downregulated == TRUE){
+  path.output.KEGG.downregulated$Term_Description <- paste("KEGG:", path.output.KEGG.downregulated$Term_Description)}
   
   # Add upregulated vs downregulated
   path.output.KEGG.upregulated$Direction <- "Upregulated"
-  path.output.GO.upregulated$Direction <- "Upregulated"
-  path.output.KEGG.downregulated$Direction <- "Downregulated"
-  path.output.GO.downregulated$Direction <- "Downregulated"
+
+  if (do_downregulated == TRUE){
+  path.output.KEGG.downregulated$Direction <- "Downregulated"}
   
   # Combine all pathways results
-  path.output.all <- rbind(path.output.KEGG.upregulated, path.output.GO.upregulated, path.output.KEGG.downregulated, path.output.GO.downregulated)
-  #path.output.all <- rbind(path.output.KEGG.upregulated, path.output.KEGG.downregulated)
+  if (do_downregulated == TRUE){
+    path.output.all <- rbind(path.output.KEGG.upregulated, path.output.KEGG.downregulated)}
+  else {
+    path.output.all <- path.output.KEGG.upregulated}
+  
   
   # Add number of terms per pathway and filter
   path.output.all$GeneCounts <- sapply(strsplit(paste(path.output.all$Up_regulated, path.output.all$Down_regulated, sep = ","), ","), function(x) sum(x != ""))
