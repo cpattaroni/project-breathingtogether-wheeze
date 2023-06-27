@@ -474,7 +474,7 @@ DAtesting <- function(phylo, variables, model, level) {
   
   # Tidy the taxonomic table
   meco$tax_table <- tidy_taxonomy(meco$tax_table)
-  
+
   # Perform classification using the LINDA method
   meco <- trans_diff$new(dataset = meco, method = 'linda', group = model, taxa_level = level)
   
@@ -506,14 +506,14 @@ DAtestingPlotBar <- function(meco, comparison, palette, number_features, title) 
   # Select the top number_features
   filtered_df <- filtered_df[1:number_features, ]
   
-  # Calculate transparency based on log10 of P.adj
-  filtered_df$Transparency <- scales::rescale((1/log10(filtered_df$P.adj)), c(0.8, 0.9))
-  
   # Reorder based on log2FoldChange
   filtered_df <- filtered_df[order(filtered_df$log2FoldChange),]
   
   # Add direction
   filtered_df$Direction <- ifelse(filtered_df$log2FoldChange<0, strsplit(comparison, " - ")[[1]][2], strsplit(comparison, " - ")[[1]][1])
+  
+  # Calculate transparency based on log10 of P.adj
+  filtered_df$Transparency <- scales::rescale((1/log10(filtered_df$P.adj)), c(0.9, 1))
   
   # Rename taxa
   filtered_df$Taxa <- gsub(".*\\|a__", "", filtered_df$Taxa)
@@ -537,15 +537,15 @@ DAtestingPlotBar <- function(meco, comparison, palette, number_features, title) 
   return(p)
 }
 
-# Record DA etsting results for some covariates
+# Record DA testing results for some covariates
 DAfeaturesCounts <- function(phylo, paramlist, level = 'ASV') {
 
   # Create a data frame to store the number of DA features
-  df <- data.frame(nbDAfeatures = rep(NA, length(paramlist)))
+  df <- data.frame(nbfeatures = rep(NA, length(paramlist)))
   
   # Loop through each parameter in the paramlist
   for (i in 1:length(paramlist)) {
-    da <- DAtesting(phylo, model = paste0("~", paramlist[i]), variables = paramlist[i], level = level)
+    da <- DAtesting(phylo, variables = paramlist[i], model = paste0("~", paramlist[i]),  level = level)
     df[i, ] <- length(which(da$res_diff$Significance!="ns"))}
   # Add the parameter list as a column to the data frame
   df$Covariate <- paramlist
@@ -553,7 +553,8 @@ DAfeaturesCounts <- function(phylo, paramlist, level = 'ASV') {
   return(df)}
 
 # Redundancy analysis for variables selection
-dbRDAselection <- function(phylo, variables, distance='wunifrac', direction='both') {
+dbRDAselectionUnifrac <- function(phylo, variables, distance='wunifrac', direction='both') {
+  set.seed(2)
   # Remove samples with missing values for the specified variables
   phylo <- ps_drop_incomplete(phylo, var=variables, verbose=TRUE)
   # Extract the metadata table from the phyloseq object
@@ -568,8 +569,46 @@ dbRDAselection <- function(phylo, variables, distance='wunifrac', direction='bot
   select.adj <- select
   select.adj$anova$`Pr(>F)` <- p.adjust(select$anova$`Pr(>F)`, method='BH', n=length(variables))
   # Return the results of the adjusted model and the unadjusted model
-  return(select.adj$anova)
   return(select$anova)
+}
+
+# Plot presence of viruses with given metadata
+plotanyViruses <- function(phylo, parameter, title){
+  phylo <- ps_drop_incomplete(phylo, var=parameter, verbose=TRUE)
+  vir.data <- SampleDataframe(phylo)
+  vir.data$parameter <- vir.data[parameter][,1]
+  p <- ggplot(vir.data %>% dplyr::count(AnyVirus, parameter) %>% mutate(pct = n/sum(n)), 
+              aes(parameter, n, fill=AnyVirus)) +
+    geom_bar(stat = "identity", position = "fill") +
+    geom_text(aes(label = n), position = position_fill(vjust = 0.5), size = 5) +
+    labs(title = title, x = parameter, y = "% of samples within group") +
+    scale_y_continuous(labels = function(x) paste0(x*100, "%")) +
+    scale_x_discrete(labels = c(paste0(names(table(vir.data[parameter]))[1], '\n', 'n = ', table(vir.data[parameter])[1]),
+                                paste0(names(table(vir.data[parameter]))[2], '\n', 'n = ', table(vir.data[parameter])[2]))) +
+    scale_fill_manual(values = c("#BF812D", "#DFC27D", "#F5F5F5")) +
+    theme(legend.position = c(1,0),
+          legend.box.background = element_rect(),
+          text = element_text(size = 12),
+          legend.title = element_blank(),
+          legend.text = element_text(size = 10),
+          legend.key.size = unit(0.5, "cm")) +
+    guides(alpha = "none")
+  return(p)
+}
+
+# Plot number of DE/DA features
+PlotfeaturesCounts <- function(countmatrix, color, title){
+  p <- ggplot(countmatrix, aes(x=Newname, y=nbfeatures, color=color, fill=color)) +
+    geom_bar(stat="identity") + coord_flip() +
+    scale_fill_manual(values=scales::alpha(color, 0.75)) +
+    scale_color_manual(values=color) +
+    scale_x_discrete(labels = function(x) str_wrap(x, width = 30)) +
+    labs(y="Number of features", x="Covariate") +
+    ggtitle(title) +
+    theme(legend.position = "none",
+          text = element_text(size = 12)) +
+    guides(alpha = "none")
+  return(p)
 }
 
 ###############################################################################################
@@ -602,14 +641,33 @@ LongitudinalBoxplots <- function(data, labels, title, ylab) {
   return(p)
 }
 
+# Count number of DE genes for some parameters
+DEfeaturesCounts <- function(dge, paramlist) {
+  
+  # Create a data frame to store the number of DA features
+  df <- data.frame(nbfeatures = rep(NA, length(paramlist)))
+  
+  # Loop through each parameter in the paramlist
+  for (i in 1:length(paramlist)) {
+    # Remove samples with NA data
+    dge <- dge[,which(!is.na(dge$targets[paramlist[i]]))]
+    de.results <- topTable(eBayes(lmFit(dge$E, model.matrix(formula(paste0("~", paramlist[i])), data=dge$targets))), coef=2, number="Inf")
+    df[i, ] <- length(which(de.results$adj.P.Val<FDR_param))}
+  
+  # Add the parameter list as a column to the data frame
+  df$Covariate <- paramlist
+  
+  # Return the data frame
+  return(df)}
+
 # Plot Volcano 
 PlotVolcanoGenes <- function(DE_matrix, Direction, palette, title) {
   
   plot <- ggplot(data=DE_matrix, aes(x=logFC, y=-log10(adj.P.Val), label=label)) + # Create a ggplot object with log2FC on x-axis and -log10(p-value) on y-axis, with label as the label of each point
     
     # Add horizontal line at -log10(FDR_param) and vertical lines at -FC_param and FC_param
-    geom_hline(yintercept=-log10(FDR_param), col='grey') + 
-    geom_vline(xintercept=c(-FC_param, FC_param), col='grey') + 
+    geom_hline(yintercept=-log10(FDR_param), col='grey', linetype="dashed") + 
+    geom_vline(xintercept=c(-FC_param, FC_param), col='grey', linetype="dashed") + 
     
     # Add points and labels for significant differentially expressed genes
     geom_point(aes(fill=Direction, color=Direction), shape=ifelse(DE_matrix$Immune=="Yes", 22, 21), size=ifelse(DE_matrix$Immune=="Yes", 3, 2), stroke=0.25) + 
@@ -664,7 +722,7 @@ PlotDistanceTimepoint <- function(se, title){
   keep.longitudinal <- names(which(rowSums(table(samples.data$Patient, samples.data$TimepointFactor))>2))
   se <- se[,se$targets$Patient %in% keep.longitudinal] 
  
-   # Calculate the distance matrix between samples
+  # Calculate the distance matrix between samples
   distance.matrix <- as.matrix(dist(t(se$E), method='maximum'))
   
   # Add a "barcode" column to the metadata
@@ -712,6 +770,116 @@ PlotDistanceTimepoint <- function(se, title){
     ylim(0,(max(transition.melt$value)+max(transition.melt$value)*0.1)) +
     ggtitle(title) + xlab('') + ylab('Δ distance between pairs (maximum)') + theme(legend.position='none', text=element_text(size=12))
   return(plot)}
+
+# Redundancy analysis for variables selection
+dbRDAselectionMaximum <- function(dge, variables, distance='maximum', direction='both') {
+  set.seed(2)
+  # Remove samples with missing values for the specified variables
+  meta <- dge$targets
+  meta <- meta[,colnames(meta) %in% variables]
+  meta <- na.omit(meta)  
+  dge <- dge[,which(colnames(dge) %in% rownames(meta))]
+  # Calculate the distance matrix between samples
+  distance.matrix <- as.matrix(dist(t(dge$E), method=distance))
+  # Perform a dbRDA with a constant term only
+  dbrda.0 <- dbrda(distance.matrix ~ 1, data=meta)
+  # Perform a dbRDA with all specified variables
+  dbrda.all <- dbrda(as.formula(paste('distance.matrix ~', paste(variables, collapse=" + "))), data=meta)
+  # Perform stepwise variable selection using the ordiR2step function
+  select <- ordiR2step(dbrda.0, scope=formula(dbrda.all), adjR2thresh=RsquareAdj(dbrda.all)$adj.r.squared, direction=direction, permutations=99)
+  # Make a copy of the selected model and adjust the p-values for multiple comparisons
+  select.adj <- select
+  select.adj$anova$`Pr(>F)` <- p.adjust(select$anova$`Pr(>F)`, method='BH', n=length(variables))
+  # Return the results of the adjusted model and the unadjusted model
+  return(select$anova)
+}
+
+# PathfindR on gene list
+ImmunePathwayAnalysis <- function(DE_table){
+  library(clusterProfiler)
+  library(org.Hs.eg.db)
+  genes.upregulated <- DE_table[!is.na(DE_table$label) & DE_table$logFC>0,]$label
+  genes.downregulated <- DE_table[!is.na(DE_table$label) & DE_table$logFC<0,]$label
+  genes.upregulated <- bitr(genes.upregulated, fromType='SYMBOL', toType='ENTREZID', OrgDb='org.Hs.eg.db')
+  genes.downregulated <- bitr(genes.downregulated, fromType='SYMBOL', toType='ENTREZID', OrgDb='org.Hs.eg.db')
+    
+  # Run pathway analysis
+  pathway.upregulated.KEGG <- as.data.frame(enrichKEGG(genes.upregulated$ENTREZID, pvalueCutoff = 0.05))
+  if (nrow(pathway.upregulated.KEGG)>0) {
+    pathway.upregulated.KEGG$Description <- paste("KEGG:", pathway.upregulated.KEGG$Description)
+    pathway.upregulated.KEGG$Direction <- "Upregulated"
+    pathway.upregulated.KEGG$Gene_ratio <- sapply(strsplit(pathway.upregulated.KEGG$GeneRatio, "/"), function(x) as.numeric(x[1]) / as.numeric(x[2]))
+  }
+  pathway.downregulated.KEGG <- as.data.frame(enrichKEGG(genes.downregulated$ENTREZID, pvalueCutoff = 0.05))
+  if (nrow(pathway.downregulated.KEGG)>0) {
+    pathway.downregulated.KEGG$Description <- paste("KEGG:", pathway.downregulated.KEGG$Description)
+    pathway.downregulated.KEGG$Direction <- "Downregulated"
+    pathway.downregulated.KEGG$Gene_ratio <- sapply(strsplit(pathway.downregulated.KEGG$GeneRatio, "/"), function(x) as.numeric(x[1]) / as.numeric(x[2]))
+  }
+  pathway.upregulated.WP <- as.data.frame(enrichWP(genes.upregulated$ENTREZID, pvalueCutoff = 0.05, organism = "Homo sapiens"))
+  if (nrow(pathway.upregulated.WP)>0) {
+    pathway.upregulated.WP$Description <- paste("WP:", pathway.upregulated.WP$Description)
+    pathway.upregulated.WP$Direction <- "Upregulated" 
+    pathway.upregulated.WP$Gene_ratio <- sapply(strsplit(pathway.upregulated.WP$GeneRatio, "/"), function(x) as.numeric(x[1]) / as.numeric(x[2]))
+  }
+  pathway.downregulated.WP <- as.data.frame(enrichWP(genes.downregulated$ENTREZID, pvalueCutoff = 0.05, organism = "Homo sapiens"))
+  if (nrow(pathway.downregulated.WP)>0) {
+    pathway.downregulated.WP$Description <- paste("WP:", pathway.downregulated.WP$Description)
+    pathway.downregulated.WP$Direction <- "Downregulated"
+    pathway.downregulated.WP$Gene_ratio <- sapply(strsplit(pathway.downregulated.WP$GeneRatio, "/"), function(x) as.numeric(x[1]) / as.numeric(x[2]))
+  }
+  pathway.upregulated.GO <- as.data.frame(enrichGO(genes.upregulated$ENTREZID, ont = "BP", pvalueCutoff = 0.05, OrgDb = org.Hs.eg.db))
+  if (nrow(pathway.upregulated.GO)>0) {
+    pathway.upregulated.GO$Description <- paste("GO:", pathway.upregulated.GO$Description)
+    pathway.upregulated.GO$Direction <- "Upregulated"
+    pathway.upregulated.GO$Gene_ratio <- sapply(strsplit(pathway.upregulated.GO$GeneRatio, "/"), function(x) as.numeric(x[1]) / as.numeric(x[2]))
+  }
+  pathway.downregulated.GO <- as.data.frame(enrichGO(genes.downregulated$ENTREZID, ont = "BP", pvalueCutoff = 0.05, OrgDb = org.Hs.eg.db))
+  if (nrow(pathway.downregulated.GO)>0) {
+    pathway.downregulated.GO$Description <- paste("GO:", pathway.downregulated.GO$Description)
+    pathway.downregulated.GO$Direction <- "Downregulated"
+    pathway.downregulated.GO$Gene_ratio <- sapply(strsplit(pathway.downregulated.GO$GeneRatio, "/"), function(x) as.numeric(x[1]) / as.numeric(x[2]))
+    }
+  
+  # Bind all results together
+  path.output.all <- rbind(pathway.upregulated.KEGG, pathway.downregulated.KEGG,
+                           pathway.upregulated.WP, pathway.downregulated.WP,
+                           pathway.upregulated.GO, pathway.downregulated.GO)
+  return(path.output.all)
+}
+
+# Plot immune pathways
+PlotImmunePathways <- function(pathways_table, palette, number_pathways, min_genecounts, title){
+  
+  # Filter top pathways
+  filtered_df <- pathways_table[order(pathways_table$p.adjust), ]
+  filtered_df <- filtered_df[filtered_df$Count >= min_genecounts, ]
+  filtered_df <- filtered_df[1:number_pathways, ]
+  
+  # Calculate transparency based on log10 of P.adj
+  filtered_df$Transparency <- scales::rescale((1/log10(filtered_df$p.adjust)), c(0.8, 0.9))
+  
+  # Reorder based on log2FoldChange
+  filtered_df <- filtered_df[order(filtered_df$Gene_ratio),]
+  
+  # Create the barplot
+  p <- ggplot(filtered_df, aes(x = factor(Description, levels = unique(filtered_df$Description)), y = Gene_ratio, 
+                               color = Direction, fill = Direction, alpha = Transparency)) +
+    geom_bar(stat = "identity") +
+    scale_fill_manual(values = palette) +
+    scale_color_manual(values = palette) +
+    coord_flip() +
+    labs(x = "Pathway", y = "Fold enrichment") +
+    ggtitle(title) +
+    theme(legend.position = c(1,0),
+          legend.box.background = element_rect(), 
+          text = element_text(size = 12),
+          legend.title = element_blank(),
+          legend.text = element_text(size = 10),
+          legend.key.size = unit(0.5, "cm")) +
+    guides(alpha = "none")
+  return(p)
+}
 
 # PathfindR on gene list
 PathfindRGOKEGG <- function(DE_table, pval_threshold, enrich_threshold, immune = FALSE, do_downregulated = TRUE){
