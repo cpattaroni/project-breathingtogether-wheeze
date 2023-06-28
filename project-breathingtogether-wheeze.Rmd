@@ -1294,10 +1294,6 @@ newnames <- c("Antibiotics courses during pregnancy", "Any breastfeeding in the 
 # Results and reordering
 host.nasal.covariates.counts$Newname <- rev(newnames)
 host.blood.covariates.counts$Newname <- rev(newnames)
-
-# Plot number of features
-(covariates.de.nasal.plot <- PlotfeaturesCounts(host.nasal.covariates.counts, custom_palette_omics2[1], "1 year cohort : Host nasal DE features with covariates"))
-(covariates.de.blood.plot <- PlotfeaturesCounts(host.blood.covariates.counts, custom_palette_omics2[2], "1 year cohort : Host blood DE features with covariates"))
 ```
 
 #### 1) sbRDA variables selection
@@ -1377,20 +1373,48 @@ ggsave("../Figures/Individual/Host_PCA_blood_Disease.pdf", plot.PCA.blood.Diseas
 
 #### 3) Differential gene expression analysis : Nasal
 
-```{r eval=T, warning=F, cache=T}
-# Remove samples with missing covariate
-host.nasal.1Y.noNA <- host.nasal.1Y[,which(!is.na(host.nasal.1Y$targets$Colds1YEAR))]
-row.names(host.nasal.1Y.noNA) <- make.unique(row.names(host.nasal.1Y.noNA))
+DE testing with adjustment for covariates.
 
+```{r eval=T, warning=F, cache=T}
 # Choose design
-design.nasal <- model.matrix(~Group+Gender+DayCare1YEAR+Colds1YEAR, data=host.nasal.1Y.noNA$targets)
+design.nasal.adj <- model.matrix(~Group+DayCare1YEAR+Gender, data=host.nasal.1Y$targets)
+colnames(design.nasal.adj)
+
+# Get DE genes with age
+DE_group_nasal_adj <- topTable(eBayes(lmFit(host.nasal.1Y$E, design.nasal.adj)), coef=2, number="Inf")
+DE_group_nasal_adj$Direction <- ifelse(DE_group_nasal_adj$logFC>FC_param & DE_group_nasal_adj$adj.P.Val<FDR_param, "Wheeze",
+                           ifelse(-(DE_group_nasal_adj$logFC)>FC_param & DE_group_nasal_adj$adj.P.Val<FDR_param, "Control", ""))
+table(DE_group_nasal_adj$Direction)
+
+# Add immune information
+DE_group_nasal_adj$Immune <- ifelse(DE_group_nasal_adj$ID %in% ImmuneDB$name, "Yes", "No")
+
+# Add labels for significant genes
+DE_group_nasal_adj$label <- NA
+DE_group_nasal_adj$label <- ifelse(DE_group_nasal_adj$Direction!="" & DE_group_nasal_adj$Immune=="Yes", DE_group_nasal_adj$ID, NA)
+table(DE_group_nasal_adj$Direction, DE_group_nasal_adj$Immune)
+
+# Plot volcano
+(plot.volcano.nasal.Disease.adj <- PlotVolcanoGenes(DE_group_nasal_adj, "Control", c("grey", custom_palette_2groups), "1 year cohort : DE genes with wheeze (adjusted for daycare attendance and sex)"))
+
+# Save plots
+ggsave("../Figures/Individual/Host_Volcano_Nasal_Disease_adj.pdf", plot.volcano.nasal.Disease.adj, width=30, height=15, units="cm", useDingbats=FALSE)
+
+# Save results to excel sheet
+write.xlsx(DE_group_nasal_adj, "../Outputs/Group_DE_nasal_ajusted_results.xlsx", row.names=FALSE)
+```
+
+DE testing without adjustment for covariates.
+
+```{r eval=T, warning=F, cache=T}
+# Choose design
+design.nasal <- model.matrix(~Group, data=host.nasal.1Y$targets)
 colnames(design.nasal)
 
 # Get DE genes with age
-DE_Group_nasal <- topTable(eBayes(lmFit(host.nasal.1Y.noNA$E, design.nasal)), coef=2, number="Inf")
+DE_Group_nasal <- topTable(eBayes(lmFit(host.nasal.1Y$E, design.nasal)), coef=2, number="Inf")
 DE_Group_nasal$Direction <- ifelse(DE_Group_nasal$logFC>FC_param & DE_Group_nasal$adj.P.Val<FDR_param, "Wheeze",
                            ifelse(-(DE_Group_nasal$logFC)>FC_param & DE_Group_nasal$adj.P.Val<FDR_param, "Control", ""))
-DE_Group_nasal$ID <- rownames(DE_Group_nasal)
 table(DE_Group_nasal$Direction)
 
 # Add immune information
@@ -1402,7 +1426,7 @@ DE_Group_nasal$label <- ifelse(DE_Group_nasal$Direction!="" & DE_Group_nasal$Imm
 table(DE_Group_nasal$Direction, DE_Group_nasal$Immune)
 
 # Plot volcano
-(plot.volcano.nasal.Disease <- PlotVolcanoGenes(DE_Group_nasal, "Control", c("grey", custom_palette_2groups), "Host transcriptomics"))
+(plot.volcano.nasal.Disease <- PlotVolcanoGenes(DE_Group_nasal, "Control", c("grey", custom_palette_2groups), "1 year cohort : DE genes with wheeze (adjusted for daycare attendance and sex)"))
 
 # Save plots
 ggsave("../Figures/Individual/Host_Volcano_Nasal_Disease.pdf", plot.volcano.nasal.Disease, width=30, height=15, units="cm", useDingbats=FALSE)
@@ -1438,46 +1462,14 @@ PlotImmunePathways(immune.pathway.disease, palette = custom_palette_2groups, num
 ### HOST LONGITUDINAL-DISEASE COMMONALITIES
 
 ```{r eval=T, warning=F, cache=T}
-# Genes common with disease
-(common.age.disease <- intersect(DE_Group_immune[DE_Group_immune$Direction!="",]$ID, DE_Age_immune[DE_Age_immune$Direction!="",]$ID))
-common.age.disease.df <- as.data.frame(t(host.longw1Y[rownames(host.longw1Y$E) %in% common.age.disease,]$E))
-common.age.disease.df$Age <- host.longw1Y$target$TimepointSimplified
-common.age.disease.df$Group <- host.longw1Y$targets$Group
-
 # Testing at each timepoint
-wilcox.test(common.age.disease.df[common.age.disease.df$Age==0 & common.age.disease.df$Group=="Yes",]$TBX21,
-            common.age.disease.df[common.age.disease.df$Age==0 & common.age.disease.df$Group=="No",]$TBX21)
-wilcox.test(common.age.disease.df[common.age.disease.df$Age==3 & common.age.disease.df$Group=="Yes",]$TBX21,
-            common.age.disease.df[common.age.disease.df$Age==3 & common.age.disease.df$Group=="No",]$TBX21)
-wilcox.test(common.age.disease.df[common.age.disease.df$Age==6 & common.age.disease.df$Group=="Yes",]$TBX21,
-            common.age.disease.df[common.age.disease.df$Age==6 & common.age.disease.df$Group=="No",]$TBX21)
-wilcox.test(common.age.disease.df[common.age.disease.df$Age==0 & common.age.disease.df$Group=="Yes",]$CD79A,
-            common.age.disease.df[common.age.disease.df$Age==0 & common.age.disease.df$Group=="No",]$CD79A)
-wilcox.test(common.age.disease.df[common.age.disease.df$Age==3 & common.age.disease.df$Group=="Yes",]$CD79A, # significant
-            common.age.disease.df[common.age.disease.df$Age==3 & common.age.disease.df$Group=="No",]$CD79A)
-wilcox.test(common.age.disease.df[common.age.disease.df$Age==6 & common.age.disease.df$Group=="Yes",]$CD79A,
-            common.age.disease.df[common.age.disease.df$Age==6 & common.age.disease.df$Group=="No",]$CD79A)
-
-# Create dataframe for specific gene and test
-TBX21.long <- data.frame(Abundance=host.longw1Y$E[rownames(host.longw1Y$E) %in% "TBX21",], Group=host.longw1Y$targets$Group, AgeFactor=host.longw1Y$targets$TimepointSimplified)
-p1 <- wilcox.test(TBX21.long[TBX21.long$AgeFactor==0,]$Abundance ~ TBX21.long[TBX21.long$AgeFactor==0,]$Group)
-p2 <- wilcox.test(TBX21.long[TBX21.long$AgeFactor==3,]$Abundance ~ TBX21.long[TBX21.long$AgeFactor==3,]$Group)
-p3 <- wilcox.test(TBX21.long[TBX21.long$AgeFactor==6,]$Abundance ~ TBX21.long[TBX21.long$AgeFactor==6,]$Group)
-(LongitudinalBoxplots(TBX21.long, c(round(p1$p.value, digits=2), round(p2$p.value, digits=2), round(p3$p.value, digits=2)), "TBX21", "TBX21 normalised"))
-
-# Create dataframe for specific gene and test
-CD79A.long <- data.frame(Abundance=host.longw1Y$E[rownames(host.longw1Y$E) %in% "CD79A",], Group=host.longw1Y$targets$Group, AgeFactor=host.longw1Y$targets$TimepointSimplified)
-p1 <- wilcox.test(CD79A.long[CD79A.long$AgeFactor==0,]$Abundance ~ CD79A.long[CD79A.long$AgeFactor==0,]$Group)
-p2 <- wilcox.test(CD79A.long[CD79A.long$AgeFactor==3,]$Abundance ~ CD79A.long[CD79A.long$AgeFactor==3,]$Group)
-p3 <- wilcox.test(CD79A.long[CD79A.long$AgeFactor==6,]$Abundance ~ CD79A.long[CD79A.long$AgeFactor==6,]$Group)
-(LongitudinalBoxplots(CD79A.long, c(round(p1$p.value, digits=2), round(p2$p.value, digits=2), round(p3$p.value, digits=2)), "CD79A", "CD79A normalised"))
-
-# Create dataframe for specific gene and test
-SAP30BP.long <- data.frame(Abundance=host.longw1Y$E[rownames(host.longw1Y$E) %in% "SAP30BP",], Group=host.longw1Y$targets$Group, AgeFactor=host.longw1Y$targets$TimepointSimplified)
-p1 <- wilcox.test(SAP30BP.long[SAP30BP.long$AgeFactor==0,]$Abundance ~ SAP30BP.long[SAP30BP.long$AgeFactor==0,]$Group)
-p2 <- wilcox.test(SAP30BP.long[SAP30BP.long$AgeFactor==3,]$Abundance ~ SAP30BP.long[SAP30BP.long$AgeFactor==3,]$Group)
-p3 <- wilcox.test(SAP30BP.long[SAP30BP.long$AgeFactor==6,]$Abundance ~ SAP30BP.long[SAP30BP.long$AgeFactor==6,]$Group)
-(LongitudinalBoxplots(SAP30BP.long, c(round(p1$p.value, digits=2), round(p2$p.value, digits=2), round(p3$p.value, digits=2)), "SAP30BP", "SAP30BP normalised"))
+LongitudinalBoxplots(host.nasal.long, DE_group_nasal_adj$label[!is.na(DE_group_nasal_adj$label)][1], "Longitudinal cohort : immune genes associated with disease at age 1")
+LongitudinalBoxplots(host.nasal.long, DE_group_nasal_adj$label[!is.na(DE_group_nasal_adj$label)][2], "Longitudinal cohort : immune genes associated with disease at age 1")
+LongitudinalBoxplots(host.nasal.long, DE_group_nasal_adj$label[!is.na(DE_group_nasal_adj$label)][3], "Longitudinal cohort : immune genes associated with disease at age 1")
+LongitudinalBoxplots(host.nasal.long, DE_group_nasal_adj$label[!is.na(DE_group_nasal_adj$label)][4], "Longitudinal cohort : immune genes associated with disease at age 1")
+LongitudinalBoxplots(host.nasal.long, DE_group_nasal_adj$label[!is.na(DE_group_nasal_adj$label)][5], "Longitudinal cohort : immune genes associated with disease at age 1")
+LongitudinalBoxplots(host.nasal.long, DE_group_nasal_adj$label[!is.na(DE_group_nasal_adj$label)][6], "Longitudinal cohort : immune genes associated with disease at age 1")
+LongitudinalBoxplots(host.nasal.long, DE_group_nasal_adj$label[!is.na(DE_group_nasal_adj$label)][7], "Longitudinal cohort : immune genes associated with disease at age 1")
 ```
 
 # [**Multi-omics**]{.underline}
@@ -1607,13 +1599,13 @@ MOFArun.long <- run_mofa(MOFAobject.long, use_basilisk = FALSE, save_data = FALS
 
 ```{r}
 # Reload MOFA results
-(plot.data.overview.long <- plot_data_overview(MOFAobject.long, colors = custom.palette.omics1) +
+(plot.data.overview.long <- plot_data_overview(MOFAobject.long, colors = custom_palette_omics1) +
     theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)))
-(plot.MOFA.var.long <- MOFAvarianceexplained(MOFArun.long, custom.palette.omics1, title = "MOFA longitudinal cohort - variance explained"))
+(plot.MOFA.var.long <- MOFAvarianceexplained(MOFArun.long, custom_palette_omics1, title = "MOFA longitudinal cohort - variance explained"))
 
 # Plot top factors
-(MOFAfactorloadings(MOFArun.long, "Factor1", "Nasal", rep(custom.palette.omics1[2],2), 10, "Factor1 : Host nasal"))
-(MOFAfactorloadings(MOFArun.long, "Factor2", "Nasal", rep(custom.palette.omics1[2],2), 10, "Factor2 : Host nasal"))
+(MOFAfactorloadings(MOFArun.long, "Factor1", "Nasal", rep(custom_palette_omics1[2],2), 10, "Factor1 : Host nasal"))
+(MOFAfactorloadings(MOFArun.long, "Factor2", "Nasal", rep(custom_palette_omics1[2],2), 10, "Factor2 : Host nasal"))
 (MOFAfactorloadings(MOFArun.long, "Factor3", "Bacteria", c(custom_palette_age[4], custom_palette_age[1]), 10, "Factor3 : Bacteria"))
 (MOFAfactorloadings(MOFArun.long, "Factor3", "Nasal", c(custom_palette_age[4], custom_palette_age[1]),  10, "Factor3 : Host nasal"))
 
@@ -1693,85 +1685,38 @@ MOFArun <- run_mofa(MOFAobject, use_basilisk = FALSE, save_data = FALSE)
 
 ```{r eval=T, warning=F, cache=T}
 # Reload MOFA results
-(plot.data.overview <- plot_data_overview(MOFAobject, colors = custom.palette.omics2) +
+(plot.data.overview <- plot_data_overview(MOFAobject, colors = custom_palette_omics2) +
     theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)))
-(plot.MOFA.var <- MOFAvarianceexplained(MOFArun, custom.palette.omics2, title = "MOFA 1year cohort - variance explained"))
+(plot.MOFA.var <- MOFAvarianceexplained(MOFArun, custom_palette_omics2, title = "MOFA 1year cohort - variance explained"))
 
 # Plot factor value with group
-(plot.factor1 <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "Group", "Latent Factor1", custom_palette_2groups, custom_palette_2groups))
-(plot.factor2 <- BoxplotBinaryMOFAfactor(MOFArun, "Factor2", "Group", "Latent Factor2", custom_palette_2groups, custom_palette_2groups))
-(plot.factor3 <- BoxplotBinaryMOFAfactor(MOFArun, "Factor3", "Group", "Latent Factor3", custom_palette_2groups, custom_palette_2groups))
+(plot.factor1.group <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "Group", "Latent Factor1", custom_palette_2groups, custom_palette_2groups))
+(plot.factor1.daycare <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "DayCare1YEAR", "Latent Factor1", custom_palette_2groups, c("grey", "grey")))
+(plot.factor1.daycaregroup <- BoxplotBinaryMOFAfactor4groups(MOFArun, "Factor1", "DayCareGroup", "Latent Factor1", custom_palette_2groups, c(rep(custom_palette_2groups[1],2), rep(custom_palette_2groups[2],2))))
 
 # Plot factor 1 top features
-(MOFAfactorloadings(MOFArun, "Factor1", "Nasal", custom_palette_2groups, 15, "Factor1 : Nasal host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor1", "Blood", custom_palette_2groups, 15, "Factor1 : Blood host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor1", "Bacteria",custom_palette_2groups, 15, "Factor1 : Bacteria"))
-
-(MOFAfactorloadings(MOFArun, "Factor2", "Nasal", custom_palette_2groups, 15, "Factor2 : Nasal host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor2", "Blood",custom_palette_2groups, 15, "Factor2 : Blood host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor2", "Bacteria",custom_palette_2groups, 15, "Factor2 : Bacteria"))
-
-(MOFAfactorloadings(MOFArun, "Factor3", "Nasal", custom_palette_2groups, 15, "Factor3 : Nasal host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor3", "Blood",custom_palette_2groups, 15, "Factor3 : Blood host gene expression"))
-(MOFAfactorloadings(MOFArun, "Factor3", "Bacteria",custom_palette_2groups, 15, "Factor3 : Bacteria"))
+(plot.factor1.nasal.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Nasal", custom_palette_2groups, 20, "Factor1 : Nasal host gene expression"))
+(plot.factor1.blood.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Blood", custom_palette_2groups[2], 10, "Factor1 : Blood host gene expression"))
+(plot.factor1.bact.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Bacteria", custom_palette_2groups, 10, "Factor1 : Bacteria"))
+(plot.factor1.vir.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Viruses", custom_palette_2groups, 7, "Factor1 : Bacteria"))
+(plot.factor1.fung.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Fungi", custom_palette_2groups, 7, "Factor1 : Bacteria"))
 ```
 
-#### 5) Key host genes-microbial correlations
+#### 5) Nasal versus blood gene expression for key genes
 
 ```{r eval=T, warning=F, cache=T}
-# Select patients for which both host data (nasal and blood) are available
-table(complete.cases(omicsmae))
-table(complete.cases(omicsmae[, , 1:2]))
-nasal.blood.mae <- omicsmae[, complete.cases(omicsmae[, , 1:2])]
+# Subset patients for which both blood and nasal gene expression are available
+hostmae <- MultiAssayExperiment(experiments=list(Nasal=as.matrix(Host.matrix.nasal), Blood=as.matrix(Host.matrix.blood)), colData=DataFrame(metaS))
+table(complete.cases(hostmae))
+host.mae.complete <- hostmae[, complete.cases(hostmae), ]
 
-# Subset blood and nasal host data for matching pairs
-common <- intersect(colnames(experiments(omicsmae)[[1]]), colnames(experiments(omicsmae)[[2]]))
-omicsmae.nasal <- experiments(omicsmae)[[1]][, colnames(experiments(omicsmae)[[1]]) %in% common]
-omicsmae.blood <- experiments(omicsmae)[[2]][, colnames(experiments(omicsmae)[[2]]) %in% common]
-
+# Create a dataframe with matching blood 
+(nasal.blood.OSM <- CorrelationNasalBlood(host.mae.complete, gene = "OSM", title = "1 year cohort : Host nasal-blood OSM gene expression (matching samples)"))
+(nasal.blood.IL36A <- CorrelationNasalBlood(host.mae.complete, gene = "IL36A", title = "1 year cohort : Host nasal-blood IL36A gene expression (matching samples)"))
+(nasal.blood.ACVR1C <- CorrelationNasalBlood(host.mae.complete, gene = "ACVR1C", title = "1 year cohort : Host nasal-blood ACVR1C gene expression (matching samples)"))
 ```
 
 #### 6) Key host genes-microbial correlations with age
-
-```{r eval=T, warning=F, cache=T}
-# Create dataframe for specific gene and test
-OSM.long <- data.frame(Abundance=host.longw1Y$E[rownames(host.longw1Y$E) %in% "OSM",], Group=host.longw1Y$targets$Group, AgeFactor=host.longw1Y$targets$TimepointSimplified)
-p1 <- wilcox.test(OSM.long[OSM.long$AgeFactor==0,]$Abundance ~ OSM.long[OSM.long$AgeFactor==0,]$Group)
-p2 <- wilcox.test(OSM.long[OSM.long$AgeFactor==3,]$Abundance ~ OSM.long[OSM.long$AgeFactor==3,]$Group)
-p3 <- wilcox.test(OSM.long[OSM.long$AgeFactor==6,]$Abundance ~ OSM.long[OSM.long$AgeFactor==6,]$Group)
-(LongitudinalBoxplots(OSM.long, c(round(p1$p.value, digits=2), round(p2$p.value, digits=2), round(p3$p.value, digits=2)), "OSM", "OSM normalised"))
-
-# Create dataframe for specific gene and test
-FSTL1.long <- data.frame(Abundance=host.longw1Y$E[rownames(host.longw1Y$E) %in% "FSTL1",], Group=host.longw1Y$targets$Group, AgeFactor=host.longw1Y$targets$TimepointSimplified)
-p1 <- wilcox.test(FSTL1.long[FSTL1.long$AgeFactor==0,]$Abundance ~ FSTL1.long[FSTL1.long$AgeFactor==0,]$Group)
-p2 <- wilcox.test(FSTL1.long[FSTL1.long$AgeFactor==3,]$Abundance ~ FSTL1.long[FSTL1.long$AgeFactor==3,]$Group)
-p3 <- wilcox.test(FSTL1.long[FSTL1.long$AgeFactor==6,]$Abundance ~ FSTL1.long[FSTL1.long$AgeFactor==6,]$Group)
-(LongitudinalBoxplots(FSTL1.long, c(round(p1$p.value, digits=2), round(p2$p.value, digits=2), round(p3$p.value, digits=2)), "FSTL1", "FSTL1 normalised"))
-
-# Create dataframe for specific bacteria and test
-sample_data(bact.logCSS.long)$Moraxella12 <- OTUDataframe(bact.logCSS.long)[taxa_names(bact.logCSS.long)=="Moraxella_catarrhalis_12",]
-moraxella12.long <- data.frame(Abundance=sample_data(bact.logCSS.long)$Moraxella12, Group=sample_data(bact.logCSS.long)$Group, AgeFactor=sample_data(bact.logCSS.long)$TimepointSimplified)
-p1 <- wilcox.test(moraxella12.long[moraxella12.long$AgeFactor==0,]$Abundance ~ moraxella12.long[moraxella12.long$AgeFactor==0,]$Group)
-p2 <- wilcox.test(moraxella12.long[moraxella12.long$AgeFactor==3,]$Abundance ~ moraxella12.long[moraxella12.long$AgeFactor==3,]$Group)
-p3 <- wilcox.test(moraxella12.long[moraxella12.long$AgeFactor==6,]$Abundance ~ moraxella12.long[moraxella12.long$AgeFactor==6,]$Group)
-(LongitudinalBoxplots(moraxella12.long, c(round(p1$p.value, digits=2), round(p2$p.value, digits=2), round(p3$p.value, digits=2)), "Moraxella_catarrhalis_12 with age", "Moraxella_catarrhalis_12 (logCSS)"))
-
-# Create dataframe for specific bacteria and test
-sample_data(bact.logCSS.long)$Moraxella3 <- OTUDataframe(bact.logCSS.long)[taxa_names(bact.logCSS.long)=="Moraxella_3",]
-moraxella3.long <- data.frame(Abundance=sample_data(bact.logCSS.long)$Moraxella3, Group=sample_data(bact.logCSS.long)$Group, AgeFactor=sample_data(bact.logCSS.long)$TimepointSimplified)
-p1 <- wilcox.test(moraxella3.long[moraxella3.long$AgeFactor==0,]$Abundance ~ moraxella3.long[moraxella3.long$AgeFactor==0,]$Group)
-p2 <- wilcox.test(moraxella3.long[moraxella3.long$AgeFactor==3,]$Abundance ~ moraxella3.long[moraxella3.long$AgeFactor==3,]$Group)
-p3 <- wilcox.test(moraxella3.long[moraxella3.long$AgeFactor==6,]$Abundance ~ moraxella3.long[moraxella3.long$AgeFactor==6,]$Group)
-(LongitudinalBoxplots(moraxella3.long, c(round(p1$p.value, digits=2), round(p2$p.value, digits=2), round(p3$p.value, digits=2)), "Moraxella_3 with age", "Moraxella_3 (logCSS)"))
-
-# Create dataframe for specific bacteria and test
-sample_data(bact.logCSS.long)$Haemophilus <- OTUDataframe(bact.logCSS.long)[taxa_names(bact.logCSS.long)=="Haemophilus_influenzae_19",]
-haemophilus19.long <- data.frame(Abundance=sample_data(bact.logCSS.long)$Haemophilus, Group=sample_data(bact.logCSS.long)$Group, AgeFactor=sample_data(bact.logCSS.long)$TimepointSimplified)
-p1 <- wilcox.test(haemophilus19.long[haemophilus19.long$AgeFactor==0,]$Abundance ~ haemophilus19.long[haemophilus19.long$AgeFactor==0,]$Group)
-p2 <- wilcox.test(haemophilus19.long[haemophilus19.long$AgeFactor==3,]$Abundance ~ haemophilus19.long[haemophilus19.long$AgeFactor==3,]$Group)
-p3 <- wilcox.test(haemophilus19.long[haemophilus19.long$AgeFactor==6,]$Abundance ~ haemophilus19.long[haemophilus19.long$AgeFactor==6,]$Group)
-(LongitudinalBoxplots(haemophilus19.long, c(round(p1$p.value, digits=2), round(p2$p.value, digits=2), round(p3$p.value, digits=2)), "Haemophilus_influenzae_19 with age", "Haemophilus_influenzae_19 (logCSS)"))
-```
 
 ### ***Figure 1***
 

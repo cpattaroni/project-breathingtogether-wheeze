@@ -616,7 +616,19 @@ PlotfeaturesCounts <- function(countmatrix, color, title){
 ###############################################################################################
 
 # Longitudinal boxplots
-LongitudinalBoxplots <- function(data, labels, title, ylab) {
+LongitudinalBoxplots <- function(dge, Gene, title) {
+  # Prepare dataframe
+  data <- data.frame(Abundance=dge$E[rownames(dge$E) %in% Gene,], Group=dge$targets$Group, AgeFactor=dge$targets$TimepointSimplified)
+  
+  # Statistics for each timepoint
+  p1 <- wilcox.test(data[data$AgeFactor==0,]$Abundance ~ data[data$AgeFactor==0,]$Group)
+  p2 <- wilcox.test(data[data$AgeFactor==3,]$Abundance ~ data[data$AgeFactor==3,]$Group)
+  p3 <- wilcox.test(data[data$AgeFactor==6,]$Abundance ~ data[data$AgeFactor==6,]$Group)
+  p4 <- wilcox.test(data[data$AgeFactor==12,]$Abundance ~ data[data$AgeFactor==12,]$Group)
+  
+  # Add stats as labels
+  labels <- c(round(p1$p.value, digits=2), round(p2$p.value, digits=2), round(p3$p.value, digits=2), round(p4$p.value, digits=2))
+  
   # Create the ggplot object with basic layers
   p <- ggplot(data, aes(x=AgeFactor, y=Abundance, fill=Group)) +
     geom_smooth(aes(color=Group, fill=Group), method='lm', level=0.75) +
@@ -627,13 +639,14 @@ LongitudinalBoxplots <- function(data, labels, title, ylab) {
     geom_label(label=labels[1], x=0, y=max(data$Abundance), color="black", fill="white", label.size=0) +
     geom_label(label=labels[2], x=3, y=max(data$Abundance), color="black", fill="white", label.size=0) +
     geom_label(label=labels[3], x=6, y=max(data$Abundance), color="black", fill="white", label.size=0) +
+    geom_label(label=labels[4], x=12, y=max(data$Abundance), color="black", fill="white", label.size=0) +
     # Set the color and fill scales
     scale_fill_manual(values=adjustcolor(custom_palette_2groups, alpha=0.5)) +
     scale_color_manual(values=adjustcolor(custom_palette_2groups, alpha=1)) +
     # Set the x-axis breaks
     scale_x_continuous(breaks=c(0, 3, 6, 9, 12, 15, 18)) + 
     # Set the plot title and axis labels
-    ggtitle(title) + xlab('Age (months)') + ylab(ylab) +
+    ggtitle(title) + xlab('Age (months)') + ylab(paste(Gene, "(voom normalised)")) +
     # Remove the legend
     theme(legend.position='none')
   
@@ -1123,13 +1136,98 @@ BoxplotBinaryMOFAfactor <- function(MOFArun, factor, parameter, title, palette, 
   return(plot)
 }
 
+# MOFA boxplot 4 groups
+BoxplotBinaryMOFAfactor4groups <- function(MOFArun, factor, parameter, title, palette, paletteboxplot) {
+  
+  # Extract factor values and metadata information from the MOFA object
+  MOFA <- MOFArun
+  factorvalues <- get_factors(MOFA, factors = factor)
+  metadata <- MOFA@samples_metadata[parameter]
+  group <- MOFA@samples_metadata['Group']
+  
+  # Combine factor values, metadata information, and group information into a data frame
+  df <- cbind(factorvalues, metadata, group)
+  colnames(df) <- c('Factor', 'Parameter', 'Group')
+  
+  # Remove rows with missing values in the metadata column
+  df.complete <- df[df$Parameter != 'NA', ]
+  
+  # Create the plot using ggplot2
+  plot <- ggplot(df.complete, aes(x = Parameter, y = Factor)) +
+    
+    # Add the boxplot with solid outlines
+    geom_boxplot(
+      width = 0.5,
+      outlier.shape = NA,
+      col = adjustcolor(paletteboxplot, alpha = 1),
+      fill = adjustcolor('white', alpha = 1)
+    ) +
+    
+    # Add the boxplot with dotted outlines
+    geom_boxplot(
+      width = 0.5,
+      outlier.shape = NA,
+      col = adjustcolor(paletteboxplot, alpha = 0.25),
+      fill = adjustcolor(paletteboxplot, alpha = 0.1)
+    ) +
+    
+    # Add points representing the data, colored by group
+    geom_point(
+      aes(color = Group, fill = Group),
+      size = 2,
+      shape = 21,
+      position = position_jitter(0.1),
+      stroke = 0.25
+    ) +
+    
+    # Set the fill and outline colors for the points
+    scale_fill_manual(values = adjustcolor(palette, alpha = 0.5)) +
+    scale_color_manual(values = adjustcolor(palette, alpha = 1)) +
+    
+    # Add significance labels using a Wilcoxon test and adjust the font size based on the significance level
+    geom_signif(
+      test = 'wilcox.test',
+      comparisons = list(
+        c(levels(as.factor(df.complete$Parameter))[1],levels(as.factor(df.complete$Parameter))[2]),
+        #c(levels(as.factor(df.complete$Parameter))[1],levels(as.factor(df.complete$Parameter))[3]),
+        #c(levels(as.factor(df.complete$Parameter))[1],levels(as.factor(df.complete$Parameter))[4]),
+        #c(levels(as.factor(df.complete$Parameter))[2],levels(as.factor(df.complete$Parameter))[3]),
+        #c(levels(as.factor(df.complete$Parameter))[2],levels(as.factor(df.complete$Parameter))[4]),
+        c(levels(as.factor(df.complete$Parameter))[3],levels(as.factor(df.complete$Parameter))[4])), step_increase = 0.1,
+      map_signif_level = c('***' = 0.001, '**' = 0.01, '*' = 0.05)
+      ) +
+    
+    # Set the plot title and axis labels
+    ggtitle(title) +
+    xlab('') +
+    ylab(title) +
+    ylab(factor) +
+    
+    # Remove the legend
+    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12))
+  
+  # Return the plot
+  return(plot)
+}
 
-
-
-
-
-
-
+# Blood nasal gene expression correlation for a given gene
+CorrelationNasalBlood <- function(mae, gene, title) {
+  genedf <- data.frame("Nasal"=assays(mae)$Nasal[rownames(assays(mae)$Nasal) %in% gene,],
+                       "Blood"=assays(mae)$Blood[rownames(assays(mae)$Blood) %in% gene,], "Group"=mae$Group)
+  cortest <- cor.test(genedf$Nasal, genedf$Blood)
+  stars <- ifelse(cortest$p.value < 0.001, "***", ifelse(cortest$p.value < 0.01, "**", ifelse(cortest$p.value < 0.05, "*", "ns")))
+  plot <- ggplot(genedf, aes(x = Nasal, y = Blood)) +
+    geom_smooth(method = "lm", se = FALSE, color = "grey", size = 1) +
+    geom_point(aes(color = Group, fill = Group), size = 4, shape = 21, stroke = 0.25) +
+    scale_fill_manual(values = adjustcolor(custom_palette_2groups, alpha = 0.5)) +
+    scale_color_manual(values = adjustcolor(custom_palette_2groups, alpha = 1)) +
+    labs(x = paste("Nasal", gene, "(voom normalised)"), y = paste("Blood", gene, "(voom normalised)")) + 
+    ggtitle(title) +
+    annotate("text", x = min(genedf$Nasal), y = max(genedf$Blood),
+             label = paste0("Pearson correlation: ", round(cortest$estimate, 2), ", p-value: ", stars), hjust = 0, vjust = 1) +
+    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12))
+  return(plot)
+}
 
 
 
