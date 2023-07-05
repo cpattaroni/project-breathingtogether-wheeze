@@ -174,7 +174,7 @@ BoxplotMetadataParameters <- function(phylo, parameter.num, parameter.bin, title
     geom_boxplot(width = 0.5, outlier.shape = NA, col = adjustcolor(paletteboxplot, alpha = 0.25),
                  fill = adjustcolor(paletteboxplot, alpha = 0.1)) +
     # Add points with jitter and fill/color by group
-    geom_point(aes(x = parameter.bin, y = parameter.num, color = Group, fill = Group),
+    geom_point(aes(x = parameter.bin, y = parameter.num, color = parameter.bin, fill = parameter.bin),
                size = 2, shape = 21, position = position_jitter(0.1), stroke = 0.25) +
     # Add color and fill scales
     scale_fill_manual(values = adjustcolor(palette, alpha = 0.5)) +
@@ -819,13 +819,13 @@ ImmunePathwayAnalysis <- function(DE_table){
   # Run pathway analysis
   pathway.upregulated.KEGG <- as.data.frame(enrichKEGG(genes.upregulated$ENTREZID, pvalueCutoff = 0.05))
   if (nrow(pathway.upregulated.KEGG)>0) {
-    pathway.upregulated.KEGG$Description <- paste("KEGG:", pathway.upregulated.KEGG$Description)
+    pathway.upregulated.KEGG$Description <- paste("", pathway.upregulated.KEGG$Description)
     pathway.upregulated.KEGG$Direction <- "Upregulated"
     pathway.upregulated.KEGG$Gene_ratio <- sapply(strsplit(pathway.upregulated.KEGG$GeneRatio, "/"), function(x) as.numeric(x[1]) / as.numeric(x[2]))
   }
   pathway.downregulated.KEGG <- as.data.frame(enrichKEGG(genes.downregulated$ENTREZID, pvalueCutoff = 0.05))
   if (nrow(pathway.downregulated.KEGG)>0) {
-    pathway.downregulated.KEGG$Description <- paste("KEGG:", pathway.downregulated.KEGG$Description)
+    pathway.downregulated.KEGG$Description <- paste("", pathway.downregulated.KEGG$Description)
     pathway.downregulated.KEGG$Direction <- "Downregulated"
     pathway.downregulated.KEGG$Gene_ratio <- sapply(strsplit(pathway.downregulated.KEGG$GeneRatio, "/"), function(x) as.numeric(x[1]) / as.numeric(x[2]))
   }
@@ -856,8 +856,11 @@ ImmunePathwayAnalysis <- function(DE_table){
   
   # Bind all results together
   path.output.all <- rbind(pathway.upregulated.KEGG, pathway.downregulated.KEGG,
-                           pathway.upregulated.WP, pathway.downregulated.WP,
-                           pathway.upregulated.GO, pathway.downregulated.GO)
+                           pathway.upregulated.GO, pathway.downregulated.GO,
+                           pathway.upregulated.WP, pathway.downregulated.WP)
+  
+  # Just KEGG
+  path.output.all <- rbind(pathway.upregulated.KEGG, pathway.downregulated.KEGG)
   return(path.output.all)
 }
 
