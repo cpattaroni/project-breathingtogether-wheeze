@@ -63,6 +63,8 @@ library(ComplexHeatmap) # for heatmaps
 library(paletteer) # for color palettes
 library(microeco) # for ecological data analysis
 library(file2meco) # for processing and analysis of microbial community data
+library(ggVennDiagram) # for Venn diagrams
+library(ggridges) # for ridges plots
 
 # Remove phyloseq warnings
 options(getClass.msg=FALSE)
@@ -168,12 +170,8 @@ colnames(phenotype) <- c("Parents reported wheeze",
                          "Hospital admissions for wheeze",
                          "Freq")
 
-# Create alluvial plot using ggalluvial
-alluvial(phenotype[,1:5], freq=phenotype$Freq, border=NA,
-         col=ifelse(phenotype$`Parents reported wheeze` == "No", custom_palette_2groups[1], custom_palette_2groups[2]))
-
 # Save alluvial plot as a PDF
-pdf("../Figures/Individual/Alluvial_groups.pdf", width = 11, height = 9)
+pdf("../Figures/Individual/Alluvial_groups.pdf", width = 10, height = 5)
 
 # Create alluvial plot with custom settings
 alluvial(phenotype[,1:5], freq=phenotype$Freq, border=NA, cex=1.5, cex.axis=1.5,
@@ -1062,6 +1060,132 @@ BoxplotMetadataParameters(bact.logCSS.long, "Haemophilus", "Group", "Haemophilus
 BoxplotMetadataParameters(bact.logCSS.long, "Haemophilus", "WheezeStatus", "Haemophilus_influenzae_19", "Haemophilus_influenzae_19 abundance (logCSS)", c(rep("grey"), 4), c(rep("grey", 8))) + facet_wrap(~ TimepointSimplified)
 ```
 
+### MICROBIOME DISEASE PHENOTYPES INVESTIGATION
+
+Aim : Characterize differences in microbiome diversity and composition in wheezers subgroups.
+
+#### 1) Alpha diversity analysis
+
+```{r eval=T, warning=F, cache=T}
+covariates.wheeze <- c("DoctorVisitsAsthmaWheeze1YEAR", "MoreThan2EpisodesWheeze", "EmergencyVisitsAsthmaWheeze1YEAR", "HospitalAdmissionsAsthmaWheeze1YEAR")
+
+# Alpha diversity versus covariates for bacteria
+bact.metadata.wheeze <- SampleDataframe(bact.wheeze.1Y)
+bact.metadata.wheeze <- SelectIntoNumeric(bact.metadata.wheeze, covariates.wheeze)
+bact.factors.cor <- cbind(Shannon=SampleDataframe(bact.wheeze.1Y)$Shannon, Observed=SampleDataframe(bact.wheeze.1Y)$Observed)
+bact.cor <- psych::corr.test(bact.factors.cor, bact.metadata.wheeze, method="spearman", adjust="fdr")
+
+# Alpha diversity versus covariates for fung
+fung.metadata.wheeze <- SampleDataframe(fung.wheeze.1Y)
+fung.metadata.wheeze <- SelectIntoNumeric(fung.metadata.wheeze, covariates.wheeze)
+fung.factors.cor <- cbind(Shannon=SampleDataframe(fung.wheeze.1Y)$Shannon, Observed=SampleDataframe(fung.wheeze.1Y)$Observed)
+fung.cor <- psych::corr.test(fung.factors.cor, fung.metadata.wheeze, method="spearman", adjust="fdr")
+
+# Alpha diversity versus covariates for vir
+vir.metadata.wheeze <- SampleDataframe(vir.wheeze.1Y)
+vir.metadata.wheeze <- SelectIntoNumeric(vir.metadata.wheeze, covariates.wheeze)
+vir.factors.cor <- cbind(Shannon=SampleDataframe(vir.wheeze.1Y)$Shannon, Observed=SampleDataframe(vir.wheeze.1Y)$Observed)
+vir.cor <- psych::corr.test(vir.factors.cor, vir.metadata.wheeze, method="spearman", adjust="fdr")
+
+# Combine all correlations
+all.cor <- rbind(bact.cor$r, fung.cor$r, vir.cor$r)
+rownames(all.cor) <- c("Bacterial Diversity", "Bacterial Richness", "Fungal Diversity", "Fungal Richness", "Viral Richness")
+colnames(all.cor) <- c("HospitalAdmissionsAsthmaWheeze1YEAR", "EmergencyVisitsAsthmaWheeze1YEAR", "MoreThan2EpisodesWheeze", "DoctorVisitsAsthmaWheeze1YEAR")
+
+# Combine all p-values
+all.p <- rbind(bact.cor$p, fung.cor$p, vir.cor$p)
+rownames(all.p) <- c("Bacterial Diversity", "Bacterial Richness", "Fungal Diversity", "Fungal Richness", "Viral Richness")
+
+# Plot the correlations
+(all.cor.factors.wheeze <- ggcorrplot(all.cor, method="circle", p.mat=all.p, insig="blank", colors=c("indianred4", "white", "#5C1E91")) +
+    labs(title="1 year cohort : Alpha diversity correlations with wheeze covariates") + scale_y_discrete(labels = str_wrap(colnames(all.cor), width=30)) +
+    theme(legend.position = c(1, 0), legend.box.background=element_rect(), axis.text.x=element_text(angle=30), text=element_text(size=12)))
+
+# Save the plot
+ggsave("../Figures/Individual/1Y_Covariates_Correlations.pdf", all.cor.factors, width=35, height=20, units="cm", useDingbats=FALSE)
+
+# Bacterial and fungal diversity and richness for 1 year dataset
+(alpha.bact.wheeze.episodes <- BoxplotMetadataParameters(bact.wheeze.1Y, "Observed", "MoreThan2EpisodesWheeze", "1 year cohort : Nasal bacterial richness in wheezers with number of episodes",
+                                                         "Observed (log)", rep(custom_palette_2groups[2],2), rep(custom_palette_2groups[2],2)))
+
+# Statistical tests
+wilcox.test(SampleDataframe(bact.wheeze.1Y)$Shannon ~ SampleDataframe(bact.wheeze.1Y)$MoreThan2EpisodesWheeze)
+```
+
+#### 2) Viruses investigation
+
+```{r eval=T, warning=F, cache=T}
+# Add information for each virus
+sample_data(vir.wheeze.1Y)$Adenovirus <- ifelse(OTUDataframe(vir.wheeze.1Y)["Adenovirus",]>0, "Yes", "No")
+sample_data(vir.wheeze.1Y)$Enterovirus <- ifelse(OTUDataframe(vir.wheeze.1Y)["Enterovirus",]>0, "Yes", "No")
+sample_data(vir.wheeze.1Y)$Parainfluenza <- ifelse(OTUDataframe(vir.wheeze.1Y)["Human Parainfluenza",]>0, "Yes", "No")
+sample_data(vir.wheeze.1Y)$Metapneumovirus <- ifelse(OTUDataframe(vir.wheeze.1Y)["Metapneumovirus",]>0, "Yes", "No")
+sample_data(vir.wheeze.1Y)$Rhinovirus <- ifelse(OTUDataframe(vir.wheeze.1Y)["Rhinovirus",]>0, "Yes", "No")
+sample_data(vir.wheeze.1Y)$RSV <- ifelse(OTUDataframe(vir.wheeze.1Y)["RSV",]>0, "Yes", "No")
+
+# Transform into any virus
+taxa_sums <- taxa_sums(vir.wheeze.1Y)
+sample_data(vir.wheeze.1Y)$AnyVirus <- ifelse(sample_sums(vir.wheeze.1Y)==0, "No Virus", ifelse(sample_sums(vir.wheeze.1Y)==1, "1 Virus detected", ">1 Viruses detected"))
+
+# Run proportion tests
+prop.test(table(sample_data(vir.wheeze.1Y)$AnyVirus, sample_data(vir.wheeze.1Y)$MoreThan2EpisodesWheeze))
+prop.test(table(sample_data(vir.wheeze.1Y)$Adenovirus, sample_data(vir.wheeze.1Y)$MoreThan2EpisodesWheeze))
+prop.test(table(sample_data(vir.wheeze.1Y)$Enterovirus, sample_data(vir.wheeze.1Y)$MoreThan2EpisodesWheeze))
+prop.test(table(sample_data(vir.wheeze.1Y)$Parainfluenza, sample_data(vir.wheeze.1Y)$MoreThan2EpisodesWheeze))
+prop.test(table(sample_data(vir.wheeze.1Y)$Metapneumovirus, sample_data(vir.wheeze.1Y)$MoreThan2EpisodesWheeze))
+prop.test(table(sample_data(vir.wheeze.1Y)$Rhinovirus, sample_data(vir.wheeze.1Y)$MoreThan2EpisodesWheeze))
+prop.test(table(sample_data(vir.wheeze.1Y)$RSV, sample_data(vir.wheeze.1Y)$MoreThan2EpisodesWheeze))
+```
+
+#### 5) Differential abundance testing
+
+```{r eval=T, warning=F, cache=T}
+# Calculate the number of DA ASVs for each covariate
+bact.wheeze.1Y.covariates <- DAfeaturesCounts(bact.wheeze.1Y, covariates.wheeze, "ASV")
+fung.wheeze.1Y.covariates <- DAfeaturesCounts(fung.wheeze.1Y, covariates.wheeze, "ASV")
+```
+
+```{r eval=T, warning=F, cache=T}
+# New variable names
+newnames <- c("DoctorVisitsAsthmaWheeze1YEAR", "MoreThan2EpisodesWheeze", "EmergencyVisitsAsthmaWheeze1YEAR", "HospitalAdmissionsAsthmaWheeze1YEAR")
+
+# Results and reordering
+bact.wheeze.1Y.covariates$Newname <- newnames
+fung.wheeze.1Y.covariates$Newname <- newnames
+
+# Plot
+(covariates.da.bact.wheeze.plot <- PlotfeaturesCounts(bact.wheeze.1Y.covariates, custom_palette_omics2[3], "1 year cohort : Nasal bacterial DA features with covariates"))
+(covariates.da.fung.wheeze.plot <- PlotfeaturesCounts(fung.wheeze.1Y.covariates, custom_palette_omics2[4], "1 year cohort : Nasal fungal DA features with covariates"))
+
+# DA testing
+bact.da.wheeze.docvisit <- DAtesting(bact.wheeze.1Y, "DoctorVisitsAsthmaWheeze1YEAR","~DoctorVisitsAsthmaWheeze1YEAR+DayCare1YEAR", level="ASV")
+table(bact.da.wheeze.docvisit$res_diff$Comparison, bact.da.wheeze.docvisit$res_diff$Significance)
+
+bact.da.wheeze.episodes <- DAtesting(bact.wheeze.1Y, "MoreThan2EpisodesWheeze","~MoreThan2EpisodesWheeze+DayCare1YEAR", level="ASV")
+table(bact.da.wheeze.episodes$res_diff$Comparison, bact.da.wheeze.episodes$res_diff$Significance)
+(bact.da.wheeze.episodes <- DAtestingPlotBar(bact.da.wheeze.episodes, "Yes - No", rep(custom_palette_2groups[2], 2), 6, "1 year cohort : Nasal bacterial DA features wheeze episodes (adjusted for daycare attendance)"))
+
+bact.da.wheeze.emergency <- DAtesting(bact.wheeze.1Y, "EmergencyVisitsAsthmaWheeze1YEAR","~EmergencyVisitsAsthmaWheeze1YEAR+DayCare1YEAR", level="ASV")
+table(bact.da.wheeze.emergency$res_diff$Comparison, bact.da.wheeze.emergency$res_diff$Significance)
+
+bact.da.wheeze.hospital <- DAtesting(bact.wheeze.1Y, "HospitalAdmissionsAsthmaWheeze1YEAR","~HospitalAdmissionsAsthmaWheeze1YEAR+DayCare1YEAR", level="ASV")
+table(bact.da.wheeze.hospital$res_diff$Comparison, bact.da.wheeze.hospital$res_diff$Significance)
+
+fung.da.wheeze.docvisit <- DAtesting(fung.wheeze.1Y, "DoctorVisitsAsthmaWheeze1YEAR","~DoctorVisitsAsthmaWheeze1YEAR+Season", level="ASV")
+table(fung.da.wheeze.docvisit$res_diff$Comparison, fung.da.wheeze.docvisit$res_diff$Significance)
+
+fung.da.wheeze.episodes <- DAtesting(fung.wheeze.1Y, "MoreThan2EpisodesWheeze","~MoreThan2EpisodesWheeze+Season", level="ASV")
+table(fung.da.wheeze.episodes$res_diff$Comparison, fung.da.wheeze.episodes$res_diff$Significance)
+(fung.da.wheeze.episodes <- DAtestingPlotBar(fung.da.wheeze.episodes, "Yes - No", rep(custom_palette_2groups[2], 2), 1, "1 year cohort : Nasal fungal DA features wheeze episodes (adjusted for sampling season)"))
+
+fung.da.wheeze.emergency <- DAtesting(fung.wheeze.1Y, "EmergencyVisitsAsthmaWheeze1YEAR","~EmergencyVisitsAsthmaWheeze1YEAR+Season", level="ASV")
+table(fung.da.wheeze.emergency$res_diff$Comparison, fung.da.wheeze.emergency$res_diff$Significance)
+
+fung.da.wheeze.hospital <- DAtesting(fung.wheeze.1Y, "HospitalAdmissionsAsthmaWheeze1YEAR","~HospitalAdmissionsAsthmaWheeze1YEAR+Season", level="ASV")
+table(fung.da.wheeze.hospital$res_diff$Comparison, fung.da.wheeze.hospital$res_diff$Significance)
+(fung.da.wheeze.hospital <- DAtestingPlotBar(fung.da.wheeze.hospital, "Yes - No", rep(custom_palette_2groups[2], 2), 1, "1 year cohort : Nasal fungal DA features wheeze hospital admissions (adjusted for sampling season)"))
+```
+
 # Gene expression
 
 ### HOST DATA IMPORT
@@ -1182,7 +1306,8 @@ table(host.nasal.longw1Y$targets$Timepoint)
 host.nasal.1Y <- host.dge.nasal[,host.dge.nasal$targets$Timepoint=="T4-1year" & !(colnames(host.dge.nasal) %in% acute.samples)]
 table(host.nasal.1Y$targets$Group)
 
-host.nasal.wheeze.1Y <- host.nasal.1Y[,host.nasal.1Y$Group=="Yes" & !(colnames(host.nasal.1Y) %in% acute.samples)]
+host.nasal.wheeze.1Y <- host.nasal.1Y[,host.nasal.1Y$targets$Group=="Yes" & !(colnames(host.nasal.1Y) %in% acute.samples)]
+host.blood.wheeze.1Y <- host.dge.blood[,host.dge.blood$targets$Group=="Yes" & !(colnames(host.dge.blood) %in% acute.samples)]
 ```
 
 ### HOST LONGITUDINAL INVESTIGATION
@@ -1436,7 +1561,26 @@ table(DE_Group_nasal$Direction, DE_Group_nasal$Immune)
 ggsave("../Figures/Individual/Host_Volcano_Nasal_Disease.pdf", plot.volcano.nasal.Disease, width=30, height=15, units="cm", useDingbats=FALSE)
 
 # Save results to excel sheet
-write.xlsx(DE_Group_nasal, "../Outputs/Group_DE_nasal_results.xlsx", row.names=FALSE)
+#write.xlsx(DE_Group_nasal, "../Outputs/Group_DE_nasal_results.xlsx", row.names=FALSE)
+
+# Venn diagram with common/different genes between 2 models
+host.nasal.disease.list <- as.vector(na.omit(DE_Group_nasal$label))
+host.nasal.disease.adj.list <- as.vector(na.omit(DE_group_nasal_adj$label))
+both.list <- list("DE genes with wheeze (sex adjusted)" = host.nasal.disease.list, "DE genes with wheeze (sex and daycare adjusted)" = host.nasal.disease.adj.list)
+(host.nasal.venn <- ggVennDiagram(both.list) +
+    scale_fill_gradient(low = scales::alpha(custom_palette_2groups[2], 0.5), high = custom_palette_2groups[2]) +
+    scale_color_manual(values = rep("white", 2)))
+
+# Heatmap with wheeze + daycare specific genes
+(host.nasal.common <- intersect(host.nasal.disease.list, host.nasal.disease.adj.list))
+host.nasal.common.matrix <- host.nasal.1Y$E[rownames(host.nasal.1Y$E) %in% host.nasal.common,]
+host.nasal.common.matrix <- melt(host.nasal.common.matrix, varnames = c("Gene", "Patient"))
+host.nasal.common.matrix$Group <- host.nasal.1Y$targets$Group[match(host.nasal.common.matrix$Patient, colnames(host.nasal.1Y$E))]
+(host.nasal.common.plot <- ggplot(host.nasal.common.matrix, aes(x = value, y = Gene, color = Group, fill = Group)) + 
+    scale_fill_manual(values = adjustcolor(custom_palette_2groups, alpha = 0.5)) +
+    scale_color_manual(values = adjustcolor(custom_palette_2groups, alpha = 1)) +
+    geom_density_ridges(scale = 1) + labs(x = "Gene expression value (voom normalised)", title = "1 year cohort : Nasal host DE genes with wheeze (sex and daycare adjusted)") +
+    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)))
 ```
 
 #### 4) Differential gene expression analysis : Blood
@@ -1513,6 +1657,18 @@ metaS.long <- rbind(metaS.1w, metaS.3m, metaS.6m, metaS.1y)
 
 # Prepare metadata file for longitudinal experiment
 rownames(metaS) <- paste0("S", metaS$Subjectnumber)
+```
+
+### HOST DISEASE PHENOTYPE
+
+#### 1) Number of DE features with covariates
+
+```{r eval=T, warning=F, cache=T}
+# Calculate the number of DE features
+host.wheeze.nasal.covariates.counts <- DEfeaturesCounts(host.nasal.wheeze.1Y, covariates.wheeze)
+host.wheeze.nasal.covariates.counts
+host.wheeze.blood.covariates.counts <- DEfeaturesCounts(host.blood.wheeze.1Y, covariates.wheeze)
+host.wheeze.blood.covariates.counts
 ```
 
 ### LONGITUDINAL MULTI-OMICS
@@ -1723,30 +1879,30 @@ Longitudinal analysis of all omics.
                     ncol = 5, nrow = 1, align = "hv",
                     widths = c(1, 0.2, 1, 0.2, 1),
                     labels = c("a","","b", "", "c"),
-                    font.label = list(size=20)))
+                    font.label = list(size=10)))
 
 (plot2 <-  ggarrange(host.long.distance, NA, bact.long.distance, NA, fung.long.distance,
                     ncol = 5, nrow = 1, align = "hv",
                     widths = c(1, 0.2, 1, 0.2, 1),
                     labels = c("d","", "e", "", "f"),
-                    font.label = list(size=20)))
+                    font.label = list(size=10)))
 
 (plot3 <- ggarrange(virus.plot.detection.long, NA, virus.plot.details.long, NA, bact.Observed.age, NA, fung.Observed.age, 
                     ncol = 7, nrow = 1, align = "hv",
                     widths = c(1, 0.2, 1, 0.2, 1.25, 0.2, 1.25),
                     labels = c("g","", "h", "", "i", "", "j"),
-                    font.label = list(size=20)))
+                    font.label = list(size=10)))
 
 (plot4 <- ggarrange(plot.volcano.Age, NA, plot.immune.pathway.age, NA, bact.long.age.bar, 
                     ncol = 5, nrow = 1, align = "hv",
                     widths = c(1.25, 0.2, 1, 0.2, 1),
                     labels = c("k","", "l", "", "m"),
-                    font.label = list(size=20)))
+                    font.label = list(size=10)))
 
 (Figure2 <- ggarrange(plot1, plot2, plot3, plot4,
                       ncol = 1, nrow = 4, align = "hv",
                       heights = c(1, 1, 1, 1),
-                      font.label = list(size=20)))
+                      font.label = list(size=10)))
 
 # Save figure
 ggsave("../Figures/Main/Figure2.pdf", Figure2, width=50, height=45, units="cm", useDingbats=FALSE)
@@ -1757,34 +1913,75 @@ ggsave("../Figures/Main/Figure2.pdf", Figure2, width=50, height=45, units="cm", 
 Covariates influencing the different omics at age 1.
 
 ```{r eval=T, warning=F, cache=T}
+# Set size
+label.size <- 20
 
-
-#host.nasal.covariates.plot host.blood.covariates.plot covariates.da.bact.plot covariates.da.fung.plot 
-#bact.da.colds.bar bact.da.daycare.bar bact.da.siblings.bar fung.da.season.bar 
-
-#all.cor.factors 
-#alpha.bact.colds alpha.bact.abx alpha.bact.daycare alpha.bact.siblings alpha.fung.season 
-#alpha.vir.daycare alpha.vir.abx alpha.vir.abxpregnancy alpha.vir.delivery
-
+# Create plots
 (plot1 <- all.cor.factors) 
-(plot2 <- ggarrange(alpha.bact.colds, NA, alpha.bact.abx, NA, alpha.bact.daycare, NA, alpha.bact.siblings, NA, alpha.fung.season,
+
+(plot2 <- ggarrange(alpha.bact.colds, NA, alpha.bact.abx, NA, alpha.bact.daycare, NA, alpha.bact.siblings, 
+                    ncol = 7, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1, 0.25, 1, 0.25, 1),
+                    labels = c("b","","c", "", "d", "", "e"),
+                    font.label = list(size=label.size)))
+
+(plot3 <- ggarrange(alpha.fung.season, NA, alpha.vir.daycare, NA, alpha.vir.abx, NA, alpha.vir.abxpregnancy, NA, alpha.vir.delivery, 
                     ncol = 9, nrow = 1, align = "hv",
-                    widths = c(1, 0.2, 1, 0.2, 1, 0.2, 1, 0.2, 1),
-                    labels = c("b","","c", "", "d", "", "e", "", "f"),
-                    font.label = list(size=20)))
-```
+                    widths = c(1.5, 0.25, 1, 0.25, 1, 0.25, 1, 0.25, 1),
+                    labels = c("f", "", "g","","h", "", "i", "", "j"),
+                    font.label = list(size=label.size)))
 
-### ***Figure 3***
+(plot23 <- ggarrange(plot2, NA, plot3,
+                     ncol = 1, nrow = 3, align = "hv",
+                     heights = c(1, 0.25, 1),
+                     font.label = list(size=label.size)))
 
-Different omics with with at age 1.
+(plot123 <- ggarrange(plot1, plot23,
+                     ncol = 2, nrow = 1, align = "hv",
+                     labels = c("a", ""),
+                     widths = c(1, 4),
+                     font.label = list(size=label.size)))
 
-```{r eval=T, warning=F, cache=T}
+(plot4 <- ggarrange(host.nasal.covariates.plot, NA, host.blood.covariates.plot, NA, covariates.da.bact.plot, NA, covariates.da.fung.plot, 
+                    ncol = 7, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1, 0.25, 1, 0.25, 1),
+                    labels = c("k","","l", "", "m", "", "n"),
+                    font.label = list(size=label.size)))
 
+(plot5 <- ggarrange(bact.da.colds.bar, NA, bact.da.daycare.bar, NA, bact.da.siblings.bar, NA, fung.da.season.bar, 
+                    ncol = 7, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1, 0.25, 1, 0.25, 1),
+                    labels = c("o","","p", "", "q", "", "r"),
+                    font.label = list(size=label.size)))
+
+(Figure3 <- ggarrange(plot123, plot4, NA, plot5,
+                      ncol = 1, nrow = 4, align = "hv",
+                      heights = c(2, 1.5, 0.1, 1),
+                      font.label = list(size=label.size)))
+
+# Save figure
+ggsave("../Figures/Main/Figure3.pdf", Figure3, width=50, height=45, units="cm", useDingbats=FALSE)
 ```
 
 ### ***Figure 4***
 
-Multiomics integration.
+Wheeze 1 year cohort.
+
+```{r eval=T, warning=F, cache=T}
+# Set size
+label.size <- 20
+
+# Create plots
+(plot1 <- ggarrange(plot.PCA.nasal.Disease, NA, plot.PCA.blood.Disease, NA, bact.ordi.1y, NA, fung.ordi.1y, 
+                    ncol = 7, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1, 0.25, 1, 0.25, 1),
+                    labels = c("a","","b", "", "c", "", "d"),
+                    font.label = list(size=label.size)))
+
+
+# Save figure
+ggsave("../Figures/Main/Figure3.pdf", Figure3, width=50, height=45, units="cm", useDingbats=FALSE)
+```
 
 ### ***Figure 5***
 
@@ -1795,7 +1992,7 @@ Multiomics integration.
                         ncol=5, nrow=3,
                         widths=c(2, 0.2, 2, 0.2, 2),
                         labels=c("a","","b", "", "c", "d", "", "e", "","f", "g", "", "h", "","i"),
-                        font.label=list(size=20)))
+                        font.label=list(size=10)))
 
 # Save figure
 ggsave("../Figures/Main/Figure6.pdf", Figure6, width=40, height=30, units="cm", useDingbats=FALSE)
