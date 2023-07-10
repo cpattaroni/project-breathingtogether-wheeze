@@ -734,8 +734,8 @@ rownames(all.p) <- c("Bacterial Diversity", "Bacterial Richness", "Fungal Divers
 
 # Plot the correlations
 (all.cor.factors <- ggcorrplot(all.cor, method="circle", p.mat=all.p, insig="blank", colors=c("indianred4", "white", "#5C1E91")) +
-    labs(title="1 year cohort : Alpha diversity correlations with covariates") + scale_y_discrete(labels = str_wrap(colnames(all.cor), width=30)) +
-    theme(legend.position = c(1, 0), legend.box.background=element_rect(), axis.text.x=element_text(angle=30), text=element_text(size=12)))
+    scale_y_discrete(labels = str_wrap(colnames(all.cor), width=30)) +
+    theme(legend.position = "none", legend.box.background=element_rect(), axis.text.x=element_text(angle=30), text=element_text(size=12)))
 
 # Save the plot
 ggsave("../Figures/Individual/1Y_Covariates_Correlations.pdf", all.cor.factors, width=35, height=20, units="cm", useDingbats=FALSE)
@@ -1090,7 +1090,7 @@ vir.cor <- psych::corr.test(vir.factors.cor, vir.metadata.wheeze, method="spearm
 # Combine all correlations
 all.cor <- rbind(bact.cor$r, fung.cor$r, vir.cor$r)
 rownames(all.cor) <- c("Bacterial Diversity", "Bacterial Richness", "Fungal Diversity", "Fungal Richness", "Viral Richness")
-colnames(all.cor) <- c("HospitalAdmissionsAsthmaWheeze1YEAR", "EmergencyVisitsAsthmaWheeze1YEAR", "MoreThan2EpisodesWheeze", "DoctorVisitsAsthmaWheeze1YEAR")
+colnames(all.cor) <- c("Hospital admission for wheeze", "ER visit for wheeze", "More than 2 episodes of wheeze", "Physician's visit for wheeze")
 
 # Combine all p-values
 all.p <- rbind(bact.cor$p, fung.cor$p, vir.cor$p)
@@ -1098,8 +1098,8 @@ rownames(all.p) <- c("Bacterial Diversity", "Bacterial Richness", "Fungal Divers
 
 # Plot the correlations
 (all.cor.factors.wheeze <- ggcorrplot(all.cor, method="circle", p.mat=all.p, insig="blank", colors=c("indianred4", "white", "#5C1E91")) +
-    labs(title="1 year cohort : Alpha diversity correlations with wheeze covariates") + scale_y_discrete(labels = str_wrap(colnames(all.cor), width=30)) +
-    theme(legend.position = c(1, 0), legend.box.background=element_rect(), axis.text.x=element_text(angle=30), text=element_text(size=12)))
+    scale_y_discrete(labels = str_wrap(colnames(all.cor), width=20)) +
+    theme(legend.position = "none", legend.box.background=element_rect(), axis.text.x=element_text(angle=30), text=element_text(size=12)))
 
 # Save the plot
 ggsave("../Figures/Individual/1Y_Covariates_Correlations.pdf", all.cor.factors, width=35, height=20, units="cm", useDingbats=FALSE)
@@ -1464,8 +1464,8 @@ data.PCA.nasal <- cbind(data.frame(Samples = rownames(PCA.nasal$x), PC1 = PCA.na
              label=paste0('Controls n = ', table(data.PCA.nasal$Group)[1], '\n', 'Wheezers n = ', table(data.PCA.nasal$Group)[2])) +
   scale_fill_manual(values = adjustcolor(custom_palette_2groups, alpha = 0.5)) +
   xlab(paste0("PC1 ", varexp[1], "%")) + ylab(paste0("PC2 ", varexp[2], "%")) + ggtitle("1 year cohort : Nasal host PCA") +
-  theme(legend.position = "bottom") +
-  theme(ggside.panel.scale = 1 / 4, axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank()))
+  theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(),
+          legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)))
 
 # Save plots
 ggsave("../Figures/Individual/Host_PCA_nasal_Disease.pdf", plot.PCA.nasal.Disease, width = 20, height = 12, units = "cm", useDingbats = FALSE)
@@ -1493,8 +1493,8 @@ data.PCA.blood <- cbind(data.frame(Samples = rownames(PCA.blood$x), PC1 = PCA.bl
              label=paste0('Controls n = ', table(data.PCA.blood$Group)[1], '\n', 'Wheezers n = ', table(data.PCA.blood$Group)[2])) +
   scale_fill_manual(values = adjustcolor(custom_palette_2groups, alpha = 0.5)) +
   xlab(paste0("PC1 ", varexp[1], "%")) + ylab(paste0("PC2 ", varexp[2], "%")) + ggtitle("1 year cohort : Blood host PCA") +
-  theme(legend.position = "bottom") +
-  theme(ggside.panel.scale = 1 / 4, axis.text.x = element_blank(), axis.text.y = element_blank(), axis.ticks = element_blank()))
+  theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(),
+          legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)))
 
 # Save plots
 ggsave("../Figures/Individual/Host_PCA_blood_Disease.pdf", plot.PCA.blood.Disease, width = 20, height = 12, units = "cm", useDingbats = FALSE)
@@ -1530,7 +1530,7 @@ table(DE_group_nasal_adj$Direction, DE_group_nasal_adj$Immune)
 ggsave("../Figures/Individual/Host_Volcano_Nasal_Disease_adj.pdf", plot.volcano.nasal.Disease.adj, width=30, height=15, units="cm", useDingbats=FALSE)
 
 # Save results to excel sheet
-write.xlsx(DE_group_nasal_adj, "../Outputs/Group_DE_nasal_ajusted_results.xlsx", row.names=FALSE)
+#write.xlsx(DE_group_nasal_adj, "../Outputs/Group_DE_nasal_ajusted_results.xlsx", row.names=FALSE)
 ```
 
 DE testing without adjustment for covariates.
@@ -1568,6 +1568,7 @@ host.nasal.disease.list <- as.vector(na.omit(DE_Group_nasal$label))
 host.nasal.disease.adj.list <- as.vector(na.omit(DE_group_nasal_adj$label))
 both.list <- list("DE genes with wheeze (sex adjusted)" = host.nasal.disease.list, "DE genes with wheeze (sex and daycare adjusted)" = host.nasal.disease.adj.list)
 (host.nasal.venn <- ggVennDiagram(both.list) +
+    theme(legend.position = "none") +
     scale_fill_gradient(low = scales::alpha(custom_palette_2groups[2], 0.5), high = custom_palette_2groups[2]) +
     scale_color_manual(values = rep("white", 2)))
 
@@ -1834,7 +1835,6 @@ MOFArun <- run_mofa(MOFAobject, use_basilisk = FALSE, save_data = FALSE)
 ```{r eval=T, warning=F, cache=T}
 # Reload MOFA results
 (plot.data.overview <- plot_data_overview(MOFAobject, colors = custom_palette_omics2, covariate = "Bacteria") +
-    ggtitle("1 year cohort : samples overlap") +
    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)))
 (plot.MOFA.var <- MOFAvarianceexplained(MOFArun, custom_palette_omics2, title = "1 year cohort : MOFA variance explained"))
 
@@ -1844,9 +1844,9 @@ MOFArun <- run_mofa(MOFAobject, use_basilisk = FALSE, save_data = FALSE)
 (plot.factor1.daycaregroup <- BoxplotBinaryMOFAfactor4groups(MOFArun, "Factor1", "DayCareGroup", "Latent Factor1", custom_palette_2groups, c(rep(custom_palette_2groups[1],2), rep(custom_palette_2groups[2],2))))
 
 # Plot factor 1 top features
-(plot.factor1.nasal.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Nasal", custom_palette_2groups[2], 10, "1 year cohort : Nasal host Factor1 MOFA loadings"))
-(plot.factor1.blood.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Blood", custom_palette_2groups[2], 10, "Factor1 : Blood host gene expression"))
-(plot.factor1.bact.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Bacteria", custom_palette_2groups, 10, "Factor1 : Bacteria"))
+(plot.factor1.nasal.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Nasal", custom_palette_2groups, 20, "1 year cohort : Nasal host Factor1 MOFA loadings"))
+(plot.factor1.blood.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Blood", custom_palette_2groups[2], 10, "1 year cohort : Blood host Factor1 MOFA loadings"))
+(plot.factor1.bact.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Bacteria", custom_palette_2groups, 10, "1 year cohort : Nasal bacteria FACTor1 MOFA loadings"))
 ```
 
 #### 5) Nasal versus blood gene expression for key genes
@@ -1860,7 +1860,7 @@ host.mae.complete <- hostmae[, complete.cases(hostmae), ]
 # Create a dataframe with matching blood 
 (nasal.blood.OSM <- CorrelationNasalBlood(host.mae.complete, gene = "OSM", title = "1 year cohort : Host nasal-blood OSM gene expression (matching samples)"))
 (nasal.blood.AQP9 <- CorrelationNasalBlood(host.mae.complete, gene = "AQP9", title = "1 year cohort : Host nasal-blood AQP9 gene expression (matching samples)"))
-(nasal.blood.ACVR1C <- CorrelationNasalBlood(host.mae.complete, gene = "ACVR1C", title = "1 year cohort : Host nasal-blood ACVR1C gene expression (matching samples)"))
+(nasal.blood.ACVR1C<- CorrelationNasalBlood(host.mae.complete, gene = "ACVR1C", title = "1 year cohort : Host nasal-blood ACVR1C gene expression (matching samples)"))
 
 # OSM with age
 (nasal.OSM.long <- LongitudinalBoxplots(host.nasal.long, "OSM", "Longitudinal cohort : OSM gene"))
@@ -1972,30 +1972,97 @@ Wheeze 1 year cohort.
 label.size <- 20
 
 # Create plots
-(plot1 <- ggarrange(plot.PCA.nasal.Disease, NA, plot.PCA.blood.Disease, NA, bact.ordi.1y, NA, fung.ordi.1y, 
-                    ncol = 7, nrow = 1, align = "hv",
-                    widths = c(1, 0.25, 1, 0.25, 1, 0.25, 1),
-                    labels = c("a","","b", "", "c", "", "d"),
+(plot1 <- ggarrange(plot.PCA.nasal.Disease, NA, plot.PCA.blood.Disease, bact.ordi.1y, NA, fung.ordi.1y, 
+                    ncol = 3, nrow = 2, align = "hv",
+                    widths = c(1, 0.25, 1,  1, 0.25, 1),
+                    labels = c("a","","b", "c", "", "d"),
                     font.label = list(size=label.size)))
 
+(plot2 <- ggarrange(bact.Observed.1Y, NA, fung.Observed.1Y, NA, virus.plot.wheeze, NA, virus.plot.details.wheeze, 
+                    ncol = 7, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1, 0.25, 1, 0.25, 1),
+                    labels = c("e","","f", "", "g", "", "h"),
+                    font.label = list(size=label.size)))
+  
+(plot3 <- ggarrange(plot.volcano.nasal.Disease, host.nasal.venn,
+                    ncol = 2, nrow = 1, align = "hv",
+                    widths = c(1.5, 1),
+                    labels = c("i", "j"),
+                    font.label = list(size=label.size)))
+
+(plot4 <- ggarrange(host.nasal.common.plot, NA, bact.da.disease.adj, NA, bact.da.disease,
+                    ncol = 5, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1, 0.25, 1),
+                    labels = c("l","","m", "", "n"),
+                    font.label = list(size=label.size)))
+
+(plot5 <- ggarrange(NA, Haemophilus.survival.plot, 
+                    ncol = 2, nrow = 1, align = "hv",
+                    widths = c(1, 1),
+                    labels = c("o", "p"),
+                    font.label = list(size=label.size)))
+
+(plot6 <- ggarrange(all.cor.factors.wheeze, NA, alpha.bact.wheeze.episodes, NA, bact.da.wheeze.episodes, 
+                    ncol = 7, nrow = 1, align = "hv",
+                    widths = c(2, 0.25, 1, 0.25, 1, 0.25, 1),
+                    labels = c("q","","r", "", "s"),
+                    font.label = list(size=label.size)))
+
+Figure4 <- ggarrange(plot1, plot2, plot3, plot4, plot5, plot6,
+                      ncol = 1, nrow = 6, align = "hv",
+                      heights = c(3, 1.5, 2, 1.5, 1.5, 1),
+                      font.label = list(size=label.size))
 
 # Save figure
-ggsave("../Figures/Main/Figure3.pdf", Figure3, width=50, height=45, units="cm", useDingbats=FALSE)
+ggsave("../Figures/Main/Figure4.pdf", Figure4, width=35, height=60, units="cm", useDingbats=FALSE)
 ```
 
 ### ***Figure 5***
 
 ```{r eval=T, warning=F, cache=T}
-(Figure6 <- ggarrange(plot.data.overview, NA, plot.mofa.explained, NA, r2f,
-                        plot.host.loadings.factor3, NA, plot.bact.loadings.factor3, NA, plot.vir.loadings.factor3,
-                        factor3.daycare.plot, NA, factor3.delivery.plot, NA, module23.age,
-                        ncol=5, nrow=3,
-                        widths=c(2, 0.2, 2, 0.2, 2),
-                        labels=c("a","","b", "", "c", "d", "", "e", "","f", "g", "", "h", "","i"),
-                        font.label=list(size=10)))
+# Set size
+label.size <- 20
+
+# Create plots
+(plot1 <- ggarrange(plot.data.overview, NA, plot.MOFA.var,
+                    ncol = 3, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1),
+                    labels = c("a","","b"),
+                    font.label = list(size=label.size)))
+
+(plot2 <- ggarrange(plot.factor1.group, NA, plot.factor1.daycaregroup,
+                    ncol = 3, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 2),
+                    labels = c("c","","d"),
+                    font.label = list(size=label.size)))
+
+(plot3 <- plot.factor1.nasal.loadings)
+
+(plot4 <- ggarrange(plot.factor1.blood.loadings, plot.factor1.bact.loadings,
+                    ncol = 1, nrow = 2, align = "hv",
+                    widths = c(1, 1),
+                    labels = c("f","g"),
+                    font.label = list(size=label.size)))
+
+(plot34 <- ggarrange(plot3, NA, plot4,
+                    ncol = 3, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1),
+                    labels = c("e","",""),
+                    font.label = list(size=label.size)))
+
+(plot5 <- ggarrange(nasal.blood.OSM, NA, nasal.blood.AQP9, NA, nasal.blood.ACVR1C,
+                    ncol = 5, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1, 0.25, 1),
+                    labels = c("f","","g", "", "h"),
+                    font.label = list(size=label.size)))
+
+Figure5 <- ggarrange(plot1, plot2, plot34, plot5, 
+                      ncol = 1, nrow = 4, align = "hv",
+                      heights = c(1, 1, 1.5, 1),
+                      font.label = list(size=label.size))
 
 # Save figure
-ggsave("../Figures/Main/Figure6.pdf", Figure6, width=40, height=30, units="cm", useDingbats=FALSE)
+ggsave("../Figures/Main/Figure5.pdf", Figure5, width=25, height=45, units="cm", useDingbats=FALSE)
 ```
 
 ```{r render, eval=T}

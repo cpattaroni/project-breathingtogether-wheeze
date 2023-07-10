@@ -984,7 +984,7 @@ MOFAvarianceexplained <- function(MOFArun, palette, title) {
     geom_bar(position='stack', stat='identity') +
     scale_fill_manual(values=adjustcolor(palette, alpha=0.75)) +
     scale_color_manual(values=adjustcolor(palette, alpha=1)) +
-    labs(x='MOFA+ factor', y='% of variance explained') +
+    labs(x="", y='% of variance explained') +
     ggtitle(title) +
     theme(legend.position = c(1,0),
           legend.box.background = element_rect(), 
