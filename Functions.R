@@ -303,7 +303,7 @@ PlotOrdinationGroupUnifrac <- function(phylo, title, palette){
     xlab(axisx) + ylab(axisy) + ggtitle(title) +
     # Remove axis ticks and tick labels
     theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(),
-          legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12))
+          legend.position = "none", legend.box.background=element_rect(), text=element_text(size=12))
   
   return(plot)
 }
@@ -564,12 +564,12 @@ dbRDAselectionUnifrac <- function(phylo, variables, distance='wunifrac', directi
   # Perform a dbRDA with all specified variables
   dbrda.all <- dbrda(as.formula(paste('phyloseq::distance(phylo, method=distance) ~', paste(variables, collapse=" + "))), data=meta)
   # Perform stepwise variable selection using the ordiR2step function
-  select <- ordiR2step(dbrda.0, scope=formula(dbrda.all), adjR2thresh=RsquareAdj(dbrda.all)$adj.r.squared, direction=direction, permutations=99)
+  select <- ordiR2step(dbrda.0, scope=formula(dbrda.all), adjR2thresh=RsquareAdj(dbrda.all)$adj.r.squared)
   # Make a copy of the selected model and adjust the p-values for multiple comparisons
   select.adj <- select
-  select.adj$anova$`Pr(>F)` <- p.adjust(select$anova$`Pr(>F)`, method='BH', n=length(variables))
+  select.adj$anova$`Pr(>F)` <- p.adjust(select$anova$`Pr(>F)`, method='fdr', n=length(variables))
   # Return the results of the adjusted model and the unadjusted model
-  return(select$anova)
+  return(select.adj$anova)
 }
 
 # Plot presence of viruses with given metadata
@@ -799,12 +799,12 @@ dbRDAselectionMaximum <- function(dge, variables, distance='maximum', direction=
   # Perform a dbRDA with all specified variables
   dbrda.all <- dbrda(as.formula(paste('distance.matrix ~', paste(variables, collapse=" + "))), data=meta)
   # Perform stepwise variable selection using the ordiR2step function
-  select <- ordiR2step(dbrda.0, scope=formula(dbrda.all), adjR2thresh=RsquareAdj(dbrda.all)$adj.r.squared, direction=direction, permutations=99)
+  select <- ordiR2step(dbrda.0, scope=formula(dbrda.all), adjR2thresh=RsquareAdj(dbrda.all)$adj.r.squared, direction=direction)
   # Make a copy of the selected model and adjust the p-values for multiple comparisons
   select.adj <- select
-  select.adj$anova$`Pr(>F)` <- p.adjust(select$anova$`Pr(>F)`, method='BH', n=length(variables))
+  select.adj$anova$`Pr(>F)` <- p.adjust(select$anova$`Pr(>F)`, method='fdr', n=length(variables))
   # Return the results of the adjusted model and the unadjusted model
-  return(select$anova)
+  return(select.adj$anova)
 }
 
 # PathfindR on gene list
