@@ -65,6 +65,8 @@ library(microeco) # for ecological data analysis
 library(file2meco) # for processing and analysis of microbial community data
 library(ggVennDiagram) # for Venn diagrams
 library(ggridges) # for ridges plots
+library(Seurat) # for single cell analysis
+library(sctransform) # for single cell analysis
 
 # Remove phyloseq warnings
 options(getClass.msg=FALSE)
@@ -757,22 +759,22 @@ sample_data(vir.1Y)$AnyVirus <- ifelse(sample_sums(vir.1Y)==0, "No Virus", ifels
 
 ```{r eval=T, warning=F, cache=T}
 # Plot significant bacteria alpha diversity
-(alpha.bact.colds <- BoxplotMetadataParameters(bact.1Y, "Observed", "Colds1YEARSimplified", "1YCo : Nasal bacterial richness with the number of colds in the first year",
+(alpha.bact.colds <- BoxplotMetadataParameters(bact.1Y, "Observed", "Colds1YEARSimplified", "MaCo : Nasal bacterial richness with the number of colds in the first year",
                                               "Observed (log)", c(scales::alpha(custom_palette_microbes[1], 0.65), custom_palette_microbes[1]), c(scales::alpha(custom_palette_microbes[1], 0.7), custom_palette_microbes[1])))
 
-(alpha.bact.abx <- BoxplotMetadataParameters(bact.1Y, "Observed", "AbxSinceBorn1YEARSimplified", "1YCo : Nasal bacterial richness with antibiotics treatments in the first year",
+(alpha.bact.abx <- BoxplotMetadataParameters(bact.1Y, "Observed", "AbxSinceBorn1YEARSimplified", "MaCo : Nasal bacterial richness with antibiotics treatments in the first year",
                                               "Observed (log)", c(scales::alpha(custom_palette_microbes[1], 0.65), custom_palette_microbes[1]), c(scales::alpha(custom_palette_microbes[1], 0.7), custom_palette_microbes[1])))
 
-(alpha.bact.daycare <- BoxplotMetadataParameters(bact.1Y, "Observed", "DayCare1YEAR", "1YCo : Bacterial Nasal richness with daycare attendance",
+(alpha.bact.daycare <- BoxplotMetadataParameters(bact.1Y, "Observed", "DayCare1YEAR", "MaCo : Bacterial Nasal richness with daycare attendance",
                                               "Observed (log)", c(scales::alpha(custom_palette_microbes[1], 0.65), custom_palette_microbes[1]), c(scales::alpha(custom_palette_microbes[1], 0.7), custom_palette_microbes[1])))
 
-(alpha.bact.siblings <- BoxplotMetadataParameters(bact.1Y, "Observed", "NbSiblingsSimplified", "1YCo : Nasal bacterial richness with siblings number",
+(alpha.bact.siblings <- BoxplotMetadataParameters(bact.1Y, "Observed", "NbSiblingsSimplified", "MaCo : Nasal bacterial richness with siblings number",
                                               "Observed (log)", c(scales::alpha(custom_palette_microbes[1], 0.65), custom_palette_microbes[1]), c(scales::alpha(custom_palette_microbes[1], 0.7), custom_palette_microbes[1])))
 
 # Plot significant fungi alpha diversity
 fung.season <- SampleDataframe(ps_drop_incomplete(fung.1Y, "Season"))
 fung.season$Season <- as.factor(fung.season$Season)
-(alpha.fung.season <- BoxplotMetadataParameters(fung.1Y, "Observed", "Season", "1YCo : Nasal fungal diversity with sampling season", "Observed (log)",
+(alpha.fung.season <- BoxplotMetadataParameters(fung.1Y, "Observed", "Season", "MaCo : Nasal fungal diversity with sampling season", "Observed (log)",
                                                 c(scales::alpha(custom_palette_microbes[2], 0.50), scales::alpha(custom_palette_microbes[2], 0.75), scales::alpha(custom_palette_microbes[2], 0.90), custom_palette_microbes[2]), 
                                                 c(scales::alpha(custom_palette_microbes[2], 0.50), scales::alpha(custom_palette_microbes[2], 0.75), scales::alpha(custom_palette_microbes[2], 0.90), custom_palette_microbes[2])) +
     scale_x_discrete(labels = c(paste0(levels(fung.season$Season)[1], '\n', 'n = ', table(fung.season$Season)[1]),
@@ -783,10 +785,12 @@ fung.season$Season <- as.factor(fung.season$Season)
                 map_signif_level=c("***"=0.001/6, "**"=0.01/6, "*"=0.05/6),  y_position=c(4.5, 4)))
 
 # Plot significant viruses alpha diversity
-(alpha.vir.daycare <- plotanyViruses(vir.1Y, "DayCare1YEAR", "1YCo : Nasal viral richness with daycare attendance"))
-(alpha.vir.abx <- plotanyViruses(vir.1Y, "AbxSinceBorn1YEARSimplified", "1YCo : Nasal viral richness with antibiotics treatments in the first year"))
-(alpha.vir.abxpregnancy <- plotanyViruses(vir.1Y, "AbxCoursesPregnancySimplified", "1YCo : Nasal viral richness with antibiotics during pregnancy"))
-(alpha.vir.delivery <- plotanyViruses(vir.1Y, "DeliverySimplified", "1YCo : Nasal viral richness with delivery mode"))
+(alpha.vir.daycare <- plotanyViruses(vir.1Y, "DayCare1YEAR", "MaCo : Nasal viral richness with daycare attendance"))
+prop.test(table(sample_data(vir.1Y)$AnyVirus, sample_data(vir.1Y)$DayCare1YEAR))
+(alpha.vir.abx <- plotanyViruses(vir.1Y, "AbxSinceBorn1YEARSimplified", "MaCo : Nasal viral richness with antibiotics treatments in the first year"))
+(alpha.vir.abxpregnancy <- plotanyViruses(vir.1Y, "AbxCoursesPregnancySimplified", "MaCo : Nasal viral richness with antibiotics during pregnancy"))
+(alpha.vir.delivery <- plotanyViruses(vir.1Y, "DeliverySimplified", "MaCo : Nasal viral richness with delivery mode"))
+prop.test(table(sample_data(vir.1Y)$AnyVirus, sample_data(vir.1Y)$DeliverySimplified))
 ```
 
 #### 3) dbRDA variables selection
@@ -828,28 +832,28 @@ bact.1Y.covariates$Newname <- rev(newnames)
 fung.1Y.covariates$Newname <- rev(newnames)
 
 # Plot
-(covariates.da.bact.plot <- PlotfeaturesCounts(bact.1Y.covariates, custom_palette_omics2[3], "1YCo : Nasal bacterial DA features with covariates"))
-(covariates.da.fung.plot <- PlotfeaturesCounts(fung.1Y.covariates, custom_palette_omics2[4], "1YCo : Nasal fungal DA features with covariates"))
+(covariates.da.bact.plot <- PlotfeaturesCounts(bact.1Y.covariates, custom_palette_omics2[3], "MaCo : Nasal bacterial DA features with covariates"))
+(covariates.da.fung.plot <- PlotfeaturesCounts(fung.1Y.covariates, custom_palette_omics2[4], "MaCo : Nasal fungal DA features with covariates"))
 ```
 
 
 ```{r eval=T, warning=F, cache=T}
 # Colds variable
 bact.da.colds <- DAtesting(bact.1Y, "Colds1YEARSimplified", "~Colds1YEARSimplified", "ASV")
-(bact.da.colds.bar <- DAtestingPlotBar(bact.da.colds, "More than 1 colds in the first year - 1 or less colds in the first year", rep(custom_palette_microbes[1],2), 7, "1YCo : Nasal bacterial DA features with colds in the first year"))
+(bact.da.colds.bar <- DAtestingPlotBar(bact.da.colds, "More than 1 colds in the first year - 1 or less colds in the first year", rep(custom_palette_microbes[1],2), 7, "MaCo : Nasal bacterial DA features with colds in the first year"))
 
 # Day care variable
 bact.da.daycare <- DAtesting(bact.1Y, "DayCare1YEAR", "~DayCare1YEAR", "ASV")
-(bact.da.daycare.bar <- DAtestingPlotBar(bact.da.daycare, "Yes daycare - No daycare", rep(custom_palette_microbes[1],2), 17, "1YCo : Nasal bacterial DA features with daycare attendance"))
+(bact.da.daycare.bar <- DAtestingPlotBar(bact.da.daycare, "Yes daycare - No daycare", rep(custom_palette_microbes[1],2), 17, "MaCo : Nasal bacterial DA features with daycare attendance"))
 
 # Siblings variable
 bact.da.siblings <- DAtesting(bact.1Y, "NbSiblingsSimplified", "~NbSiblingsSimplified", "ASV")
-(bact.da.siblings.bar <- DAtestingPlotBar(bact.da.siblings, "One or more sibling(s) - No siblings", rep(custom_palette_microbes[1],2), 7, "1YCo : Nasal bacterial DA features with siblings number"))
+(bact.da.siblings.bar <- DAtestingPlotBar(bact.da.siblings, "One or more sibling(s) - No siblings", rep(custom_palette_microbes[1],2), 7, "MaCo : Nasal bacterial DA features with siblings number"))
 
 # Season
 fung.da.season <- DAtesting(fung.1Y, "Season", "~Season", "ASV")
 table(fung.da.season$res_diff$Comparison, fung.da.season$res_diff$Significance)
-(fung.da.season.bar <- DAtestingPlotBar(fung.da.season, "3-Summer - 1-Winter", rep(custom_palette_microbes[2],2), 11, "1YCo : Nasal fungal DA features with sampling season"))
+(fung.da.season.bar <- DAtestingPlotBar(fung.da.season, "3-Summer - 1-Winter", rep(custom_palette_microbes[2],2), 11, "MaCo : Nasal fungal DA features with sampling season"))
 ```
 
 ### MICROBIOME DISEASE INVESTIGATION
@@ -863,11 +867,11 @@ richness (number of taxonomic groups), evenness (distribution of abundances of t
 
 ```{r eval=T, warning=F, cache=T}
 # Bacterial and fungal diversity and richness for 1 year dataset
-(bact.Shannon.1Y <- BoxplotMetadataGroup(bact.1Y, "Shannon", "1YCo : Nasal bacterial diversity with wheeze", "Shannon diversity", custom_palette_2groups))
-(bact.Observed.1Y <- BoxplotMetadataGroup(bact.1Y, "Observed", "1YCo : Nasal bacterial richness with wheeze", "Observed richness (log)", custom_palette_2groups))
-(fung.Shannon.1Y <- BoxplotMetadataGroup(fung.1Y, "Shannon", "1YCo : Nasal fungal diversity with wheeze", "Shannon diversity", custom_palette_2groups))
-(fung.Observed.1Y <- BoxplotMetadataGroup(fung.1Y, "Observed", "1YCo : Nasal fungal richness with wheeze", "Observed richness (log)", custom_palette_2groups))
-(vir.Observed.1Y <- BoxplotMetadataGroup(vir.1Y, "Observed", "1YCo : Nasal viral richness with wheeze", "Observed richness (number of detected viruses)", custom_palette_2groups))
+(bact.Shannon.1Y <- BoxplotMetadataGroup(bact.1Y, "Shannon", "MaCo : Nasal bacterial diversity with wheeze", "Shannon diversity", custom_palette_2groups))
+(bact.Observed.1Y <- BoxplotMetadataGroup(bact.1Y, "Observed", "MaCo : Nasal bacterial richness with wheeze", "Observed richness (log)", custom_palette_2groups))
+(fung.Shannon.1Y <- BoxplotMetadataGroup(fung.1Y, "Shannon", "MaCo : Nasal fungal diversity with wheeze", "Shannon diversity", custom_palette_2groups))
+(fung.Observed.1Y <- BoxplotMetadataGroup(fung.1Y, "Observed", "MaCo : Nasal fungal richness with wheeze", "Observed richness (log)", custom_palette_2groups))
+(vir.Observed.1Y <- BoxplotMetadataGroup(vir.1Y, "Observed", "MaCo : Nasal viral richness with wheeze", "Observed richness (number of detected viruses)", custom_palette_2groups))
 
 # Statistical tests
 wilcox.test(SampleDataframe(bact.1Y)$Shannon ~ SampleDataframe(bact.1Y)$Wheeze1YEAR)
@@ -879,6 +883,9 @@ wilcox.test(SampleDataframe(fung.1Y)$Observed ~ SampleDataframe(fung.1Y)$Wheeze1
 #### 2) Viruses investigation
 
 ```{r eval=T, warning=F, cache=T}
+# Run correlation tests
+cor.test(sample_data(vir.1Y)$Observed, as.numeric(as.factor(sample_data(vir.1Y)$Group)), method = "spearman")
+
 # Run proportion tests
 prop.test(table(sample_data(vir.1Y)$AnyVirus, sample_data(vir.1Y)$Group))
 prop.test(table(sample_data(vir.1Y)$Adenovirus, sample_data(vir.1Y)$Group))
@@ -892,7 +899,7 @@ prop.test(table(sample_data(vir.1Y)$RSV, sample_data(vir.1Y)$Group))
 vir.data <- as.data.frame(SampleDataframe(vir.1Y))
 
 # Stacked bar plots of viral detection
-(virus.plot.wheeze <- plotanyViruses(vir.1Y, "Group", "1YCo : Nasal viral richness with wheeze"))
+(virus.plot.wheeze <- plotanyViruses(vir.1Y, "Group", "MaCo : Nasal viral richness with wheeze"))
 
 # Combine virus data for each group
 vir.data.detailed <- cbind(as.data.frame(taxa_sums(phyloseq::subset_samples(vir.1Y, Group=="No"))),
@@ -905,7 +912,7 @@ vir.data.detailed <- melt(vir.data.detailed)
 (virus.plot.details.wheeze <- ggplot(vir.data.detailed, aes(x = variable, y = value, fill = Virus)) +
     geom_bar(stat = "identity", position = "fill") +
     geom_text(aes(label = value), position = position_fill(vjust = 0.5), size = 5) +
-    labs(title = "1YCo : Nasal viral composition with wheeze", x = "Group", y = "% of positive samples for a given virus") +
+    labs(title = "MaCo : Nasal viral composition with wheeze", x = "Group", y = "% of positive samples for a given virus") +
     scale_y_continuous(labels = function(x) paste0(x * 100, "%")) +
     scale_x_discrete(labels = c(paste0("Controls", '\n', 'n = ', table(SampleDataframe(vir.1Y)$Group)[1]),
                              paste0("Wheezers", '\n', 'n = ', table(SampleDataframe(vir.1Y)$Group)[2]))) +
@@ -926,8 +933,8 @@ datasets.
 
 ```{r eval=T, warning=F, cache=T}
 # Beta diversity
-(bact.ordi.1y <- PlotOrdinationGroupUnifrac(bact.logCSS.1Y , "1YCo : Nasal bacterial weighted Unifrac PCoA", custom_palette_2groups))
-(fung.ordi.1y <- PlotOrdinationGroupUnifrac(fung.logCSS.1Y , "1YCo : Nasal fungal weighted Unifrac PCoA", custom_palette_2groups))
+(bact.ordi.1y <- PlotOrdinationGroupUnifrac(bact.logCSS.1Y , "MaCo : Nasal bacterial weighted Unifrac PCoA", custom_palette_2groups))
+(fung.ordi.1y <- PlotOrdinationGroupUnifrac(fung.logCSS.1Y , "MaCo : Nasal fungal weighted Unifrac PCoA", custom_palette_2groups))
 ```
 
 #### 4) ANOSIM
@@ -948,8 +955,8 @@ bact.da.disease.ASV.adj <- DAtesting(bact.1Y, c("Group", "DayCare1YEAR"),"~Group
 table(bact.da.disease.ASV.adj$res_diff$Comparison, bact.da.disease.ASV.adj$res_diff$Significance)
 bact.da.disease.ASV <- DAtesting(bact.1Y, "Group","~Group", level="ASV")
 table(bact.da.disease.ASV$res_diff$Comparison, bact.da.disease.ASV$res_diff$Significance)
-(bact.da.disease.adj <- DAtestingPlotBar(bact.da.disease.ASV.adj, "Yes - No", custom_palette_2groups, 7, "1YCo : Nasal bacterial DA features with wheeze (adjusted for daycare attendance)"))
-(bact.da.disease <- DAtestingPlotBar(bact.da.disease.ASV, "Yes - No", custom_palette_2groups, 14, "1YCo : Nasal bacterial DA features with wheeze"))
+(bact.da.disease.adj <- DAtestingPlotBar(bact.da.disease.ASV.adj, "Yes - No", custom_palette_2groups, 7, "MaCo : Nasal bacterial DA features with wheeze (adjusted for daycare attendance)"))
+(bact.da.disease <- DAtestingPlotBar(bact.da.disease.ASV, "Yes - No", custom_palette_2groups, 14, "MaCo : Nasal bacterial DA features with wheeze"))
 
 # Differential abundance testing fungi
 fung.da.disease.ASV.adj <- DAtesting(fung.1Y, c("Group", "Season"),"~Group+Season", level="ASV")
@@ -1100,7 +1107,7 @@ rownames(all.p) <- c("Bacterial Diversity", "Bacterial Richness", "Fungal Divers
 ggsave("../Figures/Individual/1Y_Covariates_Correlations.pdf", all.cor.factors, width=35, height=20, units="cm", useDingbats=FALSE)
 
 # Bacterial and fungal diversity and richness for 1 year dataset
-(alpha.bact.wheeze.episodes <- BoxplotMetadataParameters(bact.wheeze.1Y, "Observed", "MoreThan2EpisodesWheeze", "1YCo : Nasal bacterial richness in wheezers with number of wheeze episodes",
+(alpha.bact.wheeze.episodes <- BoxplotMetadataParameters(bact.wheeze.1Y, "Observed", "MoreThan2EpisodesWheeze", "MaCo : Nasal bacterial richness in wheezers with number of wheeze episodes",
                                                          "Observed (log)", rep(custom_palette_2groups[2],2), rep(custom_palette_2groups[2],2)))
 
 # Statistical tests
@@ -1149,8 +1156,8 @@ bact.wheeze.1Y.covariates$Newname <- newnames
 fung.wheeze.1Y.covariates$Newname <- newnames
 
 # Plot
-(covariates.da.bact.wheeze.plot <- PlotfeaturesCounts(bact.wheeze.1Y.covariates, custom_palette_omics2[3], "1YCo : Nasal bacterial DA features with covariates"))
-(covariates.da.fung.wheeze.plot <- PlotfeaturesCounts(fung.wheeze.1Y.covariates, custom_palette_omics2[4], "1YCo : Nasal fungal DA features with covariates"))
+(covariates.da.bact.wheeze.plot <- PlotfeaturesCounts(bact.wheeze.1Y.covariates, custom_palette_omics2[3], "MaCo : Nasal bacterial DA features with covariates"))
+(covariates.da.fung.wheeze.plot <- PlotfeaturesCounts(fung.wheeze.1Y.covariates, custom_palette_omics2[4], "MaCo : Nasal fungal DA features with covariates"))
 
 # DA testing
 bact.da.wheeze.docvisit <- DAtesting(bact.wheeze.1Y, "DoctorVisitsAsthmaWheeze1YEAR","~DoctorVisitsAsthmaWheeze1YEAR+DayCare1YEAR", level="ASV")
@@ -1158,7 +1165,7 @@ table(bact.da.wheeze.docvisit$res_diff$Comparison, bact.da.wheeze.docvisit$res_d
 
 bact.da.wheeze.episodes <- DAtesting(bact.wheeze.1Y, "MoreThan2EpisodesWheeze","~MoreThan2EpisodesWheeze+DayCare1YEAR", level="ASV")
 table(bact.da.wheeze.episodes$res_diff$Comparison, bact.da.wheeze.episodes$res_diff$Significance)
-(bact.da.wheeze.episodes <- DAtestingPlotBar(bact.da.wheeze.episodes, "Yes - No", rep(custom_palette_2groups[2], 2), 6, "1YCo : Nasal bacterial DA features wheeze episodes (adjusted for daycare attendance)"))
+(bact.da.wheeze.episodes <- DAtestingPlotBar(bact.da.wheeze.episodes, "Yes - No", rep(custom_palette_2groups[2], 2), 6, "MaCo : Nasal bacterial DA features wheeze episodes (adjusted for daycare attendance)"))
 
 bact.da.wheeze.emergency <- DAtesting(bact.wheeze.1Y, "EmergencyVisitsAsthmaWheeze1YEAR","~EmergencyVisitsAsthmaWheeze1YEAR+DayCare1YEAR", level="ASV")
 table(bact.da.wheeze.emergency$res_diff$Comparison, bact.da.wheeze.emergency$res_diff$Significance)
@@ -1171,14 +1178,14 @@ table(fung.da.wheeze.docvisit$res_diff$Comparison, fung.da.wheeze.docvisit$res_d
 
 fung.da.wheeze.episodes <- DAtesting(fung.wheeze.1Y, "MoreThan2EpisodesWheeze","~MoreThan2EpisodesWheeze+Season", level="ASV")
 table(fung.da.wheeze.episodes$res_diff$Comparison, fung.da.wheeze.episodes$res_diff$Significance)
-(fung.da.wheeze.episodes <- DAtestingPlotBar(fung.da.wheeze.episodes, "Yes - No", rep(custom_palette_2groups[2], 2), 1, "1YCo : Nasal fungal DA features wheeze episodes (adjusted for sampling season)"))
+(fung.da.wheeze.episodes <- DAtestingPlotBar(fung.da.wheeze.episodes, "Yes - No", rep(custom_palette_2groups[2], 2), 1, "MaCo : Nasal fungal DA features wheeze episodes (adjusted for sampling season)"))
 
 fung.da.wheeze.emergency <- DAtesting(fung.wheeze.1Y, "EmergencyVisitsAsthmaWheeze1YEAR","~EmergencyVisitsAsthmaWheeze1YEAR+Season", level="ASV")
 table(fung.da.wheeze.emergency$res_diff$Comparison, fung.da.wheeze.emergency$res_diff$Significance)
 
 fung.da.wheeze.hospital <- DAtesting(fung.wheeze.1Y, "HospitalAdmissionsAsthmaWheeze1YEAR","~HospitalAdmissionsAsthmaWheeze1YEAR+Season", level="ASV")
 table(fung.da.wheeze.hospital$res_diff$Comparison, fung.da.wheeze.hospital$res_diff$Significance)
-(fung.da.wheeze.hospital <- DAtestingPlotBar(fung.da.wheeze.hospital, "Yes - No", rep(custom_palette_2groups[2], 2), 1, "1YCo : Nasal fungal DA features wheeze hospital admissions (adjusted for sampling season)"))
+(fung.da.wheeze.hospital <- DAtestingPlotBar(fung.da.wheeze.hospital, "Yes - No", rep(custom_palette_2groups[2], 2), 1, "MaCo : Nasal fungal DA features wheeze hospital admissions (adjusted for sampling season)"))
 ```
 
 # Gene expression
@@ -1340,6 +1347,9 @@ data.PCA <- cbind(data.frame(Samples = rownames(PCA$x), PC1 = PCA$x[,1], PC2 = P
 
 # Save plots
 ggsave("../Figures/Individual/Host_PCA_Age.pdf", plot.nasal.PCA.Age, width = 20, height = 12, units = "cm", useDingbats = FALSE)
+
+# Adonis 
+adonis2(formula = as.matrix(dist(t(host.nasal.long$E), method='maximum')) ~ TimepointSimplified, data = host.nasal.long$targets)
 ```
 
 #### 2) Distance from previous timepoint
@@ -1416,8 +1426,8 @@ host.nasal.covariates.counts$Newname <- rev(newnames)
 host.blood.covariates.counts$Newname <- rev(newnames)
 
 # Plot number of features
-(host.nasal.covariates.plot <- PlotfeaturesCounts(host.nasal.covariates.counts, custom_palette_omics2[1],"1YCo : Nasal host DE features with covariates"))
-(host.blood.covariates.plot <- PlotfeaturesCounts(host.blood.covariates.counts, custom_palette_omics2[2],"1YCo : Blood host DE features with covariates"))
+(host.nasal.covariates.plot <- PlotfeaturesCounts(host.nasal.covariates.counts, custom_palette_omics2[1],"MaCo : Nasal host DE features with covariates"))
+(host.blood.covariates.plot <- PlotfeaturesCounts(host.blood.covariates.counts, custom_palette_omics2[2],"MaCo : Blood host DE features with covariates"))
 
 # Genes with daycare
 host.nasal.daycare <- host.nasal.1Y[,which(!is.na(host.nasal.1Y$targets$DayCare1YEAR))]
@@ -1458,12 +1468,15 @@ data.PCA.nasal <- cbind(data.frame(Samples = rownames(PCA.nasal$x), PC1 = PCA.na
   annotate('text', x=min(data.PCA.nasal$PC1), y=min(data.PCA.nasal$PC2),
              label=paste0('Controls n = ', table(data.PCA.nasal$Group)[1], '\n', 'Wheezers n = ', table(data.PCA.nasal$Group)[2])) +
   scale_fill_manual(values = adjustcolor(custom_palette_2groups, alpha = 0.5)) +
-  xlab(paste0("PC1 ", varexp[1], "%")) + ylab(paste0("PC2 ", varexp[2], "%")) + ggtitle("1YCo : Nasal host PCA") +
+  xlab(paste0("PC1 ", varexp[1], "%")) + ylab(paste0("PC2 ", varexp[2], "%")) + ggtitle("MaCo : Nasal host PCA") +
   theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(),
           legend.position = "none", legend.box.background=element_rect(), text=element_text(size=12)))
 
 # Save plots
 ggsave("../Figures/Individual/Host_PCA_nasal_Disease.pdf", plot.PCA.nasal.Disease, width = 20, height = 12, units = "cm", useDingbats = FALSE)
+
+# Adonis 
+adonis2(formula = as.matrix(dist(t(host.nasal.1Y$E), method='maximum')) ~ Group, data = host.nasal.1Y$targets)
 ```
 
 #### 2) Principal coordinate analysis : Blood
@@ -1487,12 +1500,15 @@ data.PCA.blood <- cbind(data.frame(Samples = rownames(PCA.blood$x), PC1 = PCA.bl
   annotate('text', x=min(data.PCA.blood$PC1), y=min(data.PCA.blood$PC2),
              label=paste0('Controls n = ', table(data.PCA.blood$Group)[1], '\n', 'Wheezers n = ', table(data.PCA.blood$Group)[2])) +
   scale_fill_manual(values = adjustcolor(custom_palette_2groups, alpha = 0.5)) +
-  xlab(paste0("PC1 ", varexp[1], "%")) + ylab(paste0("PC2 ", varexp[2], "%")) + ggtitle("1YCo : Blood host PCA") +
+  xlab(paste0("PC1 ", varexp[1], "%")) + ylab(paste0("PC2 ", varexp[2], "%")) + ggtitle("MaCo : Blood host PCA") +
   theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(),
           legend.position = "none", legend.box.background=element_rect(), text=element_text(size=12)))
 
 # Save plots
 ggsave("../Figures/Individual/Host_PCA_blood_Disease.pdf", plot.PCA.blood.Disease, width = 20, height = 12, units = "cm", useDingbats = FALSE)
+
+# Adonis 
+adonis2(formula = as.matrix(dist(t(host.dge.blood$E), method='maximum')) ~ Group, data = host.dge.blood$targets)
 ```
 
 #### 3) Differential gene expression analysis : Nasal
@@ -1519,13 +1535,13 @@ DE_Group_nasal$label <- ifelse(DE_Group_nasal$Direction!="" & DE_Group_nasal$Imm
 table(DE_Group_nasal$Direction, DE_Group_nasal$Immune)
 
 # Plot volcano
-(plot.volcano.nasal.Disease <- PlotVolcanoGenes(DE_Group_nasal, "Control", c("grey", custom_palette_2groups), "1YCo : Nasal host DE genes with wheeze (adjusted for sex)"))
+(plot.volcano.nasal.Disease <- PlotVolcanoGenes(DE_Group_nasal, "Control", c("grey", custom_palette_2groups), "MaCo : Nasal host DE genes with wheeze (adjusted for sex)"))
 
 # Save plots
 ggsave("../Figures/Individual/Host_Volcano_Nasal_Disease.pdf", plot.volcano.nasal.Disease, width=30, height=15, units="cm", useDingbats=FALSE)
 
 # Save results to excel sheet
-#write.xlsx(DE_Group_nasal, "../Outputs/Group_DE_nasal_results.xlsx", row.names=FALSE)
+write.xlsx(DE_Group_nasal[1:500,], "../Outputs/Group_DE_nasal_results.xlsx", row.names=FALSE)
 ```
 
 #### 4) Differential gene expression analysis : Blood
@@ -1549,7 +1565,7 @@ write.xlsx(DE_Group_blood, "../Outputs/Group_DE_blood_results.xlsx", row.names=F
 
 ```{r}
 immune.pathway.disease <- ImmunePathwayAnalysis(DE_Group_nasal)
-(immune.pathway.disease.plot <- PlotImmunePathways(immune.pathway.disease, palette = custom_palette_2groups[2], number_pathways = 2, min_genecounts = 2, title = "1YCo : Nasal host immune pathways with wheeze (adjusted for sex)"))
+(immune.pathway.disease.plot <- PlotImmunePathways(immune.pathway.disease, palette = custom_palette_2groups[2], number_pathways = 2, min_genecounts = 2, title = "MaCo : Nasal host immune pathways with wheeze (adjusted for sex)"))
 ```
 
 # [**Multi-omics**]{.underline}
@@ -1724,17 +1740,19 @@ Vir.matrix <- OTUDataframe(vir.1Y)
 colnames(Vir.matrix) <- paste0("S", SampleDataframe(vir.1Y)$Subject)
 
 # Prepare nasal host matrix
-Host.matrix.nasal <- host.nasal.1Y$E[rownames(host.nasal.1Y$E) %in% ImmuneDB$name,]
+Host.matrix.nasal <- host.nasal.1Y$E
 colnames(Host.matrix.nasal) <- paste0('S', host.nasal.1Y$targets$Subjectnumber)
 rownames(Host.matrix.nasal) <- make.unique(rownames(Host.matrix.nasal))
+Host.matrix.nasal.immune <- Host.matrix.nasal[rownames(Host.matrix.nasal) %in% ImmuneDB$name,]
 
 # Prepare blood host matrix
-Host.matrix.blood <- host.dge.blood$E[rownames(host.dge.blood$E) %in% ImmuneDB$name,]
+Host.matrix.blood <- host.dge.blood$E
 colnames(Host.matrix.blood) <- paste0('S', host.dge.blood$targets$Subjectnumber)
 rownames(Host.matrix.blood) <- make.unique(rownames(Host.matrix.blood))
+Host.matrix.blood.immune <- Host.matrix.blood[rownames(Host.matrix.blood) %in% ImmuneDB$name,]
 
 # Create list of omics datasets
-omicslist <- list(Nasal=as.matrix(Host.matrix.nasal), Blood=as.matrix(Host.matrix.blood), 
+omicslist <- list(Nasal=as.matrix(Host.matrix.nasal.immune), Blood=as.matrix(Host.matrix.blood.immune), 
                   Bacteria=as.matrix(Bact.matrix), Fungi=as.matrix(Fung.matrix), Viruses=as.matrix(Vir.matrix))
 
 # Create a MultiAssayExperiment object
@@ -1763,42 +1781,250 @@ MOFArun <- run_mofa(MOFAobject, use_basilisk = FALSE, save_data = FALSE)
 #### 3) MOFA variance and factors
 
 ```{r eval=T, warning=F, cache=T}
+# Number of top loadings to display
+ntop <- 20
+
 # Reload MOFA results
 (plot.data.overview <- plot_data_overview(MOFAobject, colors = custom_palette_omics2, covariate = "Bacteria") +
    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)))
-(plot.MOFA.var <- MOFAvarianceexplained(MOFArun, custom_palette_omics2, title = "1YCo : MOFA variance explained"))
+(plot.MOFA.var <- MOFAvarianceexplained(MOFArun, custom_palette_omics2, title = "MaCo : MOFA variance explained"))
 
 # Plot factor value with group
 (plot.factor1.group <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "Group", "Latent Factor1", custom_palette_2groups, custom_palette_2groups))
+(plot.factor1.group <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "HaemoStatus", "Latent Factor1", custom_palette_age, custom_palette_age))
 (plot.factor1.daycare <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "DayCare1YEAR", "Latent Factor1", custom_palette_2groups, c("grey", "grey")))
 (plot.factor1.daycaregroup <- BoxplotBinaryMOFAfactor4groups(MOFArun, "Factor1", "DayCareGroup", "Latent Factor1", custom_palette_2groups, c(rep(custom_palette_2groups[1],2), rep(custom_palette_2groups[2],2))))
 
+# Plot factor value with group
+(plot.factor2.group <- BoxplotBinaryMOFAfactor(MOFArun, "Factor2", "Group", "Latent Factor2", custom_palette_2groups, custom_palette_2groups))
+(plot.factor3.group <- BoxplotBinaryMOFAfactor(MOFArun, "Factor3", "Group", "Latent Factor3", custom_palette_2groups, custom_palette_2groups))
+(plot.factor2.daycare <- BoxplotBinaryMOFAfactor(MOFArun, "Factor2", "DayCare1YEAR", "Latent Factor2", custom_palette_2groups, c("grey", "grey")))
+(plot.factor2.daycaregroup <- BoxplotBinaryMOFAfactor4groups(MOFArun, "Factor2", "DayCareGroup", "Latent Factor1", custom_palette_2groups, c(rep(custom_palette_2groups[1],2), rep(custom_palette_2groups[2],2))))
+
 # Plot factor 1 top features
-(plot.factor1.nasal.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Nasal", custom_palette_2groups, 20, "1YCo : Nasal host Factor1 MOFA loadings"))
-(plot.factor1.blood.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Blood", custom_palette_2groups[2], 10, "1YCo : Blood host Factor1 MOFA loadings"))
-(plot.factor1.bact.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Bacteria", custom_palette_2groups, 10, "1YCo : Nasal bacteria Factor1 MOFA loadings"))
+(plot.factor1.nasal.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Nasal", custom_palette_2groups, ntop, "MaCo : Nasal host Factor1 MOFA loadings"))
+(plot.factor1.blood.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Blood", custom_palette_2groups[2], ntop, "MaCo : Blood host Factor1 MOFA loadings"))
+(plot.factor1.bact.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Bacteria", custom_palette_2groups, ntop, "MaCo : Nasal bacteria Factor1 MOFA loadings"))
 ```
 
-#### 5) Nasal versus blood gene expression for key genes
+#### 6) Local-systemic commonalities
+
+```{r}
+# Set the number of top features to investigate
+ntop <- 20
+
+# Select top loading genes common between local and systemic gene expression
+(common.nasal.blood <- intersect(MOFAtoploadings(MOFArun, "Factor1", "Nasal", ntop)$Name, MOFAtoploadings(MOFArun, "Factor1", "Blood", ntop)$Name))
+
+common.df <- list("Nasal" = MOFAtoploadings(MOFArun, "Factor1", "Nasal", ntop)$Name, "Blood" = MOFAtoploadings(MOFArun, "Factor1", "Blood", ntop)$Name)
+common.Venn <- ggVennDiagram(common.df, color = 1, lwd = 0.7, label = "count") + scale_fill_gradient(low = "bisque", high = custom_palette_2groups[2]) +
+  scale_color_manual(values = c(rep("black", 2))) + theme(legend.position = "none")
+
+ggsave("../Figures/Individual/Venn.pdf", common.Venn, width=10, height=10, units="cm", useDingbats=FALSE)
+```
+
+#### 7) Monocytes markers
+
+```{r}
+# Check whether some of the markers are found
+rownames(Host.matrix.nasal)[grep("CCR", rownames(Host.matrix.nasal))]
+
+# Set up human monocytes markers
+human.monocytes.classical <- c("CD14", "CCR2", "CCR5") # CCR2 not detected
+human.monocytes.intermediate <- c("CD14", "FCGR3A", "HLA-DRA") # CD16 is FCGR3A
+human.monocytes.nonclassical <- c("FCGR3A", "CX3CR1",  "HLA-DRA")
+human.monocytes.markers <- c(human.monocytes.classical, human.monocytes.intermediate, human.monocytes.nonclassical)
+
+# Extract gene expression matrices
+nasal.common.genes <- as.matrix(t(Host.matrix.nasal[rownames(Host.matrix.nasal) %in% common.nasal.blood, ]))
+blood.common.genes <- as.matrix(t(Host.matrix.blood[rownames(Host.matrix.blood) %in% common.nasal.blood, ]))
+nasal.monocytes.genes <- as.matrix(t(Host.matrix.nasal[rownames(Host.matrix.nasal) %in% human.monocytes.markers, ]))
+blood.monocytes.genes <- as.matrix(t(Host.matrix.blood[rownames(Host.matrix.blood) %in% human.monocytes.markers, ]))
+
+# Perform correlation analyses
+nasal.monocytes.cor <- psych::corr.test(nasal.common.genes, nasal.monocytes.markers, method="spearman", adjust="fdr")
+nasal.monocytes.cor <- ggcorrplot(nasal.monocytes.cor$r, method = "circle", p.mat = nasal.monocytes.cor$p.adj, 
+           insig = "blank",  outline.color = "black", show.diag = TRUE, 
+           tl.srt = 90, colors = c("goldenrod3", "white", "darkorchid4")) + 
+  labs(title = "Correlations with monocytes markers")
+
+ggsave("../Figures/Individual/Monocytes_markers.pdf", width=30, height=10, units="cm", useDingbats=FALSE)
+
+blood.monocytes.cor <- psych::corr.test(blood.common.genes, blood.monocytes.genes, method="spearman", adjust="fdr")
+ggcorrplot(blood.monocytes.cor$r, method = "circle", p.mat = blood.monocytes.cor$p.adj, 
+           insig = "blank",  outline.color = "black", show.diag = TRUE, 
+           tl.srt = 90, colors = c("goldenrod3", "white", "darkorchid4")) + 
+  labs(title = "Host blood common local-systemic genes with human circulating monocytes markers")
+
+```
+
+#### 5) OSM pathway investigation
 
 ```{r eval=T, warning=F, cache=T}
+# Individual host datasets
+nasal.host.mae <- MultiAssayExperiment(experiments=list(Nasal=as.matrix(Host.matrix.nasal)), colData=DataFrame(metaS))
+blood.host.mae <- MultiAssayExperiment(experiments=list(Blood=as.matrix(Host.matrix.blood)), colData=DataFrame(metaS))
+
 # Subset patients for which both blood and nasal gene expression are available
-hostmae <- MultiAssayExperiment(experiments=list(Nasal=as.matrix(Host.matrix.nasal), Blood=as.matrix(Host.matrix.blood)), colData=DataFrame(metaS))
-table(complete.cases(hostmae))
-host.mae.complete <- hostmae[, complete.cases(hostmae), ]
+host.mae <- MultiAssayExperiment(experiments=list(Nasal=as.matrix(Host.matrix.nasal), Blood=as.matrix(Host.matrix.blood)), colData=DataFrame(metaS))
+table(complete.cases(host.mae))
+host.mae.complete <- host.mae[, complete.cases(host.mae), ]
+
+# Subset patients for which both nasal gene expression and nasal bacteria are available
+nasal.host.bact.mae <- MultiAssayExperiment(experiments=list(Nasal=as.matrix(Host.matrix.nasal),  Bacteria=as.matrix(Bact.matrix)), colData=DataFrame(metaS))
+table(complete.cases(nasal.host.bact.mae))
+nasal.host.bact.mae.complete <- nasal.host.bact.mae[, complete.cases(nasal.host.bact.mae ), ]
 
 # Create a dataframe with matching blood 
-(nasal.blood.OSM <- CorrelationNasalBlood(host.mae.complete, gene = "OSM", title = "1YCo : Host nasal-blood OSM gene expression (matching samples)"))
-(nasal.blood.AQP9 <- CorrelationNasalBlood(host.mae.complete, gene = "AQP9", title = "1YCo : Host nasal-blood AQP9 gene expression (matching samples)"))
-(nasal.blood.ACVR1C<- CorrelationNasalBlood(host.mae.complete, gene = "ACVR1C", title = "1YCo : Host nasal-blood ACVR1C gene expression (matching samples)"))
+(nasal.blood.OSM <- CorrelationNasalBlood(host.mae.complete, gene = common.nasal.blood[1], title = "MaCo : Host nasal-blood gene expression (matching samples)"))
+(nasal.blood.IL36A <- CorrelationNasalBlood(host.mae.complete, gene = "IL36A", title = "MaCo : Host nasal-blood IL36A gene expression (matching samples)"))
+(nasal.blood.EGFR <- CorrelationNasalBlood(host.mae.complete, gene = "EGFR", title = "MaCo : Host nasal-blood EGFR gene expression (matching samples)"))
 
-# OSM with age
-(nasal.OSM.long <- LongitudinalBoxplots(host.nasal.long, "OSM", "LoCo : OSM gene"))
-(nasal.AQP9.long <- LongitudinalBoxplots(host.nasal.long, "AQP9", "LoCo : AQP9 gene"))
-(nasal.ACVR1C.long <- LongitudinalBoxplots(host.nasal.long, "ACVR1C", "LoCo : ACVR1C gene"))
+# OSM pathway investigation
+CorrelationGeneBact(nasal.host.bact.mae.complete, gene = "OSM", bacteria = "Haemophilus_influenzae_19", "Nasal OSM vs Haemophilus_influenzae_19 correlation")
+CorrelationGeneBact(nasal.host.bact.mae.complete, gene = "OSM", bacteria = "Moraxella_3", "Nasal OSM vs Moraxella_3 correlation")
+CorrelationGeneBact(nasal.host.bact.mae.complete, gene = "OSM", bacteria = "Moraxella_catarrhalis_12", "Nasal OSM vs Moraxella_catarrhalis_12 correlation")
+CorrelationGeneGene(blood.host.mae, "Blood", "OSM", "EGFR", "OSM vs EGFR")
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "STAT3", "OSM vs STAT3")
+CorrelationGeneGene(blood.host.mae, "Blood", "OSM", "EGFR", "Blood OSM vs EGFR")
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "EGFR", "Nasal OSM vs EGFR")
+CorrelationGeneGene(blood.host.mae, "Blood", "OSM", "EGFR", "OSM vs EGFR")
+CorrelationGeneGene(nasal.host.mae, "Nasal", "CCL20", "EGFR", "OSM vs EGFR")
+
+# OSM receptors investigation
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "OSMR", "Nasal OSM with its receptor OSMR")
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSMR", "LIFR", "Nasal OSM receptors type I: LIFR vs IL6ST (gp130)")
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSMR", "IL6ST", "Nasal OSM receptors type II: OSMR vs IL6ST (gp130)")
+
+# OSM downstream pathways : JAK/STAT
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "JAK1", "Nasal OSM with JAK/STAT pathway member JAK1") # ns
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "JAK2", "Nasal OSM with JAK/STAT pathway member JAK2") # Positive 0.44 ***
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "JAK3", "Nasal OSM with JAK/STAT pathway member JAK3") # Positive 0.8 ***
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "TYK2", "Nasal OSM with JAK/STAT pathway member TYK2") # Positive 0.38 ***
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "STAT1", "Nasal OSM with JAK/STAT pathway member STAT1") # ns
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "STAT2", "Nasal OSM with JAK/STAT pathway member STAT2") # ns
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "STAT3", "Nasal OSM with JAK/STAT pathway member STAT3") # Negative -0.54 ***
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "STAT4", "Nasal OSM with JAK/STAT pathway member STAT4") # ns
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "STAT5B", "Nasal OSM with JAK/STAT pathway member STAT5B") # Positive 0.41 ***
+
+# OSM downstream pathways : ERK pathways
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "IL17RA", "Nasal OSM with ERK pathway member JAK1") # ns
+
+# OSM downstream pathways : ERK1/ERK2
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "MAPK2", "Nasal OSM with JAK/STAT pathway member JAK1") # ns
+
+# OSM with asthma
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "IL33", "Nasal OSM with ERK pathway member JAK1") # ns
+
+
+
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSMR", "LIFR", "Nasal OSM receptors type I: LIFR vs IL6ST (gp130)")
+CorrelationGeneGene(nasal.host.mae, "Nasal", "OSMR", "IL6ST", "Nasal OSM receptors type II: OSMR vs IL6ST (gp130)")
 ```
 
-#### 6) Key host genes-microbial correlations with age
+### SINGLE CELL ANALYSIS
+
+#### 1) HLCA pre-processing
+
+This part is run on the cluster (computationally intensive).
+
+```{r eval=F}
+### PASTE CODE HERE ###
+```
+
+#### 2) UMAP of nasal subset
+
+```{r}
+# Single cell palette
+custom_palette_singlecell <- c(paletteer_dynamic("cartography::sand.pal", 4), paletteer_dynamic("cartography::wine.pal", 3), "lightpink4", "grey")
+
+# Reload 
+HCLA_data_nose <- readRDS("../Databases/HLCA_complete_nose_comb.rds")
+table(HCLA_data_nose@meta.data$tissue_level_3)
+table(HCLA_data_nose@meta.data$disease)
+sort(table(HCLA_data_nose@meta.data$cell_type), decreasing = TRUE)
+
+# Check elbow plot
+ElbowPlot(HCLA_data_nose, ndims = 30)
+
+# Harmonize airway epithelium label
+HCLA_data_nose@meta.data$ann_level_2.2 <- ifelse(HCLA_data_nose@meta.data$ann_level_2 == "Alveolar epithelium", "Airway epithelium", HCLA_data_nose@meta.data$ann_level_2)
+
+(allcells.ann2.umap <- DimPlot(HCLA_data_nose, group.by = "ann_level_2.2", label = TRUE, repel = TRUE, label.size = 5, raster = FALSE, cols = custom_palette_singlecell) +
+    labs(title = "HCLA : core nasal subset") +
+    theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(),
+          legend.box.background=element_rect(), text=element_text(size=12)))
+
+ggsave("../Figures/Individual/Single_cell_ann2.pdf", allcells.ann2.umap, width=20, height=20, units="cm", useDingbats=FALSE)
+
+# List of genes of interest
+common.genes <- c("CSF2RA", "IL36A", "TNFSF13B", "TLR8", "AQP9", "OSM", "ACVR1C")
+
+# Check expression of our genes of interest
+(allcells.ann2.dotplot <- DotPlot(HCLA_data_nose, features = common.genes, dot.min = 0.005, group.by = "ann_level_2.2", dot.scale = 20, scale.by = "size", assay = "RNA", 
+        cols = scales::alpha(c(custom_palette_singlecell[1], custom_palette_singlecell[6]), 0.75)) +
+  labs(title = "HCLA : expression of shared local and systemic genes") +
+  theme(legend.box.background=element_rect(), text=element_text(size=12)))
+
+ggsave("../Figures/Individual/Single_cell_ann2_dotplot.pdf", allcells.ann2.dotplot, width=20, height=15, units="cm", useDingbats=FALSE)
+
+# Subset the myeloid cells
+HCLA_data_nose_myeloid <- subset(HCLA_data_nose, subset = ann_level_2.2 == "Myeloid")
+ElbowPlot(HCLA_data_nose_myeloid, ndims = 30)
+
+# Run downstream analyses
+HCLA_data_nose_myeloid  <- ScaleData(HCLA_data_nose_myeloid )
+HCLA_data_nose_myeloid  <- RunPCA(HCLA_data_nose_myeloid , npcs = 10)
+HCLA_data_nose_myeloid  <- RunUMAP(HCLA_data_nose_myeloid , reduction = "pca", dims = 1:10)
+HCLA_data_nose_myeloid  <- FindNeighbors(HCLA_data_nose_myeloid , reduction = "pca", dims = 1:10)
+HCLA_data_nose_myeloid  <- FindClusters(HCLA_data_nose_myeloid , resolution = 0.5)
+
+# Perform UMAP on the PCA results
+p1 <- DimPlot(HCLA_data_nose_myeloid, group.by = "seurat_clusters", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
+p2 <- DimPlot(HCLA_data_nose_myeloid, group.by = "ann_level_3", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
+p3 <- DimPlot(HCLA_data_nose_myeloid, group.by = "ann_level_4", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
+p4 <- DimPlot(HCLA_data_nose_myeloid, group.by = "ann_level_5", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
+p5 <- DimPlot(HCLA_data_nose_myeloid, group.by = "ann_finest_level", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
+p6 <- DimPlot(HCLA_data_nose_myeloid, group.by = "cell_type", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
+
+t <- ggarrange(p1, p2, p3, p4, p5, p6, nrow = 2, ncol = 3)
+ggsave("../Figures/Individual/Single_cell_clusters.pdf", t, width=80, height=50, units="cm", useDingbats=FALSE)
+
+# Re-annotate clusters
+FindAllMarkers(HCLA_data_nose_myeloid)
+markers %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10
+DoHeatmap(HCLA_data_nose_myeloid, features = top10$gene) + NoLegend()
+
+
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==0, "Classical monocytes", NA)
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==1, "", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==2, "", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==3, "", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==4, "Mast cells", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==5, "", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==6, "", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==7, "Plasmacytoid dendritic cell", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==8, "", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
+
+
+DimPlot(HCLA_data_nose_myeloid, group.by = "seurat_clusters", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap") +
+  labs(title = "HCLA : core nasal subset") +
+  theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(),
+        #legend.position = "none", 
+        legend.box.background=element_rect(), text=element_text(size=12))
+
+# Create violin plots for common genes
+DotPlot(HCLA_data_nose_myeloid, features = common.genes, dot.min = 0.05, group.by = "cell_type", dot.scale = 20, scale.by = "size")
+ggsave("../Figures/Main/Fig5.pdf", width=20, height=20, units="cm", useDingbats=FALSE)
+FeaturePlot(HCLA_data_nose_myeloid, features = common.genes, pt.size = 0.5, cols = scales::alpha(c(custom_palette_singlecell[1], custom_palette_singlecell[6]), 0.75)) 
+ggsave("../Figures/Main/Fig6.pdf", width=40, height=20, units="cm", useDingbats=FALSE)
+```
+
+
+
+https://research.cchmc.org/pbge/lunggens/CellRef/LungMapCellRef.html?ensid=ENSG00000169508&geneid=GPR183&spe=HS
 
 ### ***Figure 2***
 
@@ -2007,3 +2233,9 @@ ggsave("../Figures/Main/Figure5.pdf", Figure5, width=25, height=45, units="cm", 
 # Create a html report
 rmarkdown::render('project-breathingtogether-group1.Rmd')
 ```
+
+
+```{r}
+
+```
+
