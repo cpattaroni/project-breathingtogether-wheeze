@@ -21,18 +21,21 @@ Copyright (c) 2023, Mucosal Immunology Lab, Monash University, Melbourne, Austra
 
 ```{r eval=F, warning=F, cache=T}
 # Install required packages
-packages <- c("vegan",  "ggplot2", "ggpubr", "ggrepel", "ggside", "xlsx", "hydroTSM", "alluvial", "dplyr", "tidyverse", "lubridate", "randomForest", "magrittr", "gtools", "ggcorrplot", "grDevices", "reshape2", "survival", "survminer", "matrixTests", "pathfindR", "paletteer", "microeco", "file2meco", "psych", "MicrobiomeStat", "phyloseq", "decontam", "metagenomeSeq", "microbiome", "limma", "edgeR", "biomaRt", "MultiAssayExperiment", "MOFA2", "ComplexHeatmap")
+packages <- c("vegan",  "ggplot2", "ggpubr", "ggrepel", "ggside", "xlsx", "hydroTSM", "alluvial", "dplyr", "tidyverse", "lubridate", "randomForest", "magrittr", "gtools", "ggcorrplot", "grDevices", "reshape2", "survival", "survminer", "matrixTests", "pathfindR", "paletteer", "microeco", "file2meco", "psych", "MicrobiomeStat", "phyloseq", "decontam", "metagenomeSeq", "microbiome", "limma", "edgeR", "biomaRt", "MultiAssayExperiment", "MOFA2", "ComplexHeatmap", "Seurat")
 
 # Install packages
 pak::pkg_install(packages)
+
+# Add memory
+usethis::edit_r_environ() #R_MAX_VSIZE=150Gb
 ```
 
 ```{r eval=T, warning=F, cache=T}
 # Load packages
-library(vegan) # for ecological data analysis
-library(phyloseq) # for microbiome data analysis
-library(decontam) # for marker gene contamination analysis
 library(metagenomeSeq) # for microbiome data analysis
+library(MOFA2) # for multi-omics factor analysis
+library(vegan) # for ecological data analysis
+library(decontam) # for marker gene contamination analysis
 library(microbiome) # for microbiome data analysis
 library(limma) # for differential expression analysis
 library(edgeR) # for differential expression analysis
@@ -48,9 +51,10 @@ library(tidyverse) # for data manipulation and visualization
 library(lubridate) # for date and time manipulation
 library(biomaRt) # for accessing biomolecular annotation data
 library(randomForest) # for random forest classification and regression
+library(clusterProfiler) # for pathway analysis
 library(magrittr) # for data manipulation
 library(MultiAssayExperiment) # for integration of multiple omics datasets
-library(MOFA2) # for multi-omics factor analysis
+library(phyloseq) # for microbiome data analysis
 library(gtools) # for string manipulation
 library(ggcorrplot) # for correlation matrix visualization
 library(grDevices) # for visualization
@@ -85,8 +89,8 @@ source("Functions.R")
 custom_palette_2groups <- c("cadetblue4", "lightsalmon2")
 custom_palette_age <- c("pink", "plum3", "plum4", "#66475A") 
 custom_palette_microbes <- c("gold2","#D69F3DFF","#825716FF")
-custom_palette_omics1 <- c("#E7999DFF","gold2","#D69F3DFF","#825716FF")
-custom_palette_omics2 <- c("#E7999DFF","#C83D43FF","gold2","#D69F3DFF","#825716FF")
+custom_palette_omics1 <- c("pink3","gold2","#D69F3DFF","#825716FF")
+custom_palette_omics2 <- c("pink3","#C83D43FF","gold2","#D69F3DFF","#825716FF")
 ```
 
 # [Metadata]{.underline}
@@ -562,6 +566,7 @@ bact.long.wheeze <- prune_samples(sample_data(bact.long)$Wheeze1YEAR == "Yes", b
 bact.longw1Y <- prune_samples(!(sample_names(bact) %in% acute.samples), bact)
 bact.1Y <- prune_samples(sample_data(bact)$Timepoint == "T4-1year" & !(sample_names(bact) %in% acute.samples), bact)
 bact.wheeze.1Y <- prune_samples(sample_data(bact.1Y)$Wheeze1YEAR == "Yes", bact.1Y)
+bact.followup.1Y <- prune_samples(!is.na(sample_data(bact.1Y)$Wheeze3years), bact.1Y)
 
 # Split datasets for fung
 fung.long <- prune_samples(sample_data(fung)$Patient %in% longitudinal.patients, fung)
@@ -569,12 +574,14 @@ fung.long.wheeze <- prune_samples(sample_data(fung.long)$Wheeze1YEAR == "Yes", f
 fung.longw1Y <- prune_samples(!(sample_names(fung) %in% acute.samples), fung)
 fung.1Y <- prune_samples(sample_data(fung)$Timepoint == "T4-1year" & !(sample_names(fung) %in% acute.samples), fung)
 fung.wheeze.1Y <- prune_samples(sample_data(fung.1Y)$Wheeze1YEAR == "Yes", fung.1Y)
+fung.followup.1Y <- prune_samples(!is.na(sample_data(fung.1Y)$Wheeze3years), fung.1Y)
 
 # Split datasets for vir
 vir.long <- prune_samples(sample_data(vir)$Patient %in% longitudinal.patients, vir)
 vir.longw1Y <- prune_samples(sample_data(vir)$Group != "Wheeze acute", vir)
 vir.1Y <- prune_samples(sample_data(vir)$Timepoint == "T4-1year" & sample_data(vir)$Group != "Wheeze acute", vir)
 vir.wheeze.1Y <- prune_samples(sample_data(vir.1Y)$Wheeze1YEAR == "Yes", vir.1Y)
+vir.followup.1Y <- prune_samples(!is.na(sample_data(vir.1Y)$Wheeze3years), vir.1Y)
 ```
 
 ### MICROBIOME LONGITUDINAL INVESTIGATION
@@ -698,6 +705,7 @@ sort(table(as.data.frame(fung.long.age.meco$res_diff[fung.long.age.meco$res_diff
 (bact.long.age.bar <- DAtestingPlotBar(bact.long.age.meco, "T4-1year - T1-1week", c(custom_palette_age[1], custom_palette_age[4]), 20, "LoCo : Nasal bacterial DA features with age"))
 ```
 
+
 ### MICROBIOME COVARIATES INVESTIGATION
 
 #### 1) Alpha diversity analysis
@@ -735,7 +743,7 @@ all.p <- rbind(bact.cor$p, fung.cor$p, vir.cor$p)
 rownames(all.p) <- c("Bacterial Diversity", "Bacterial Richness", "Fungal Diversity", "Fungal Richness", "Viral Richness")
 
 # Plot the correlations
-(all.cor.factors <- ggcorrplot(all.cor, method="circle", p.mat=all.p, insig="blank", colors=c("indianred4", "white", "#5C1E91")) +
+(all.cor.factors <- ggcorrplot(all.cor, method="circle", p.mat=all.p, insig="blank", colors= c("goldenrod3", "white", "#964091")) +
     scale_y_discrete(labels = str_wrap(colnames(all.cor), width=30)) +
     theme(legend.position = "right", legend.box.background=element_rect(), axis.text.x=element_text(angle=30), text=element_text(size=12)))
 
@@ -943,8 +951,8 @@ ANOSIM (ANalysis Of Similarities) is then used to test microbiota composition di
 or more groups, based on weighted Unifrac measure.
 
 ```{r eval=T, warning=F, cache=T}
-ANOSIMunifrac(bact.logCSS.1Y, "Group")
-ANOSIMunifrac(fung.logCSS.1Y, "Group")
+ANOSIMunifrac(bact.logCSS.1Y, "Group + DayCare1YEAR")
+ANOSIMunifrac(fung.logCSS.1Y, "Group + Season")
 ```
 
 #### 5) Differential abundance testing
@@ -1066,7 +1074,7 @@ BoxplotMetadataParameters(bact.logCSS.long, "Haemophilus", "WheezeStatus", "Haem
 
 Aim : Characterize differences in microbiome diversity and composition in wheezers subgroups.
 
-#### 1) Alpha diversity analysis
+#### 1) Alpha diversity analysis with wheeze metadata
 
 ```{r eval=T, warning=F, cache=T}
 covariates.wheeze <- c("DoctorVisitsAsthmaWheeze1YEAR", "MoreThan2EpisodesWheeze", "EmergencyVisitsAsthmaWheeze1YEAR", "HospitalAdmissionsAsthmaWheeze1YEAR")
@@ -1099,22 +1107,39 @@ all.p <- rbind(bact.cor$p, fung.cor$p, vir.cor$p)
 rownames(all.p) <- c("Bacterial Diversity", "Bacterial Richness", "Fungal Diversity", "Fungal Richness", "Viral Richness")
 
 # Plot the correlations
-(all.cor.factors.wheeze <- ggcorrplot(all.cor, method="circle", p.mat=all.p, insig="blank", colors=c("indianred4", "white", "#5C1E91")) +
+(all.cor.factors.wheeze <- ggcorrplot(all.cor, method="circle", p.mat=all.p, insig="blank", colors= c("goldenrod3", "white", "#964091")) +
     scale_y_discrete(labels = str_wrap(colnames(all.cor), width=20)) +
     theme(legend.position = "none", legend.box.background=element_rect(), axis.text.x=element_text(angle=30), text=element_text(size=12)))
 
 # Save the plot
-ggsave("../Figures/Individual/1Y_Covariates_Correlations.pdf", all.cor.factors, width=35, height=20, units="cm", useDingbats=FALSE)
+ggsave("../Figures/Individual/1Y_Covariates_Correlations_wheeze.pdf", all.cor.factors.wheeze, width=35, height=20, units="cm", useDingbats=FALSE)
 
 # Bacterial and fungal diversity and richness for 1 year dataset
-(alpha.bact.wheeze.episodes <- BoxplotMetadataParameters(bact.wheeze.1Y, "Observed", "MoreThan2EpisodesWheeze", "MaCo : Nasal bacterial richness in wheezers with number of wheeze episodes",
-                                                         "Observed (log)", rep(custom_palette_2groups[2],2), rep(custom_palette_2groups[2],2)))
+(alpha.bact.wheeze.episodes <- BoxplotMetadataParameters(bact.wheeze.1Y, "Observed", "MoreThan2EpisodesWheeze", "MaCo : Nasal bacterial richness in wheezers with number of wheeze episodes", "Observed (log)", rep(custom_palette_2groups[2],2), rep(custom_palette_2groups[2],2)))
 
 # Statistical tests
 wilcox.test(SampleDataframe(bact.wheeze.1Y)$Shannon ~ SampleDataframe(bact.wheeze.1Y)$MoreThan2EpisodesWheeze)
 ```
 
-#### 2) Viruses investigation
+#### 2) Alpha diversity analysis with wheeze follow up
+
+```{r eval=T, warning=F, cache=T}
+# Bacterial and fungal diversity and richness for 1 year dataset
+(bact.Shannon.followup.1Y <- BoxplotMetadataParameters(bact.followup.1Y, "Shannon", "Wheeze3years", "WheezeMaCo : Nasal bacterial diversity with wheeze follow up at 3 years", "Shannon diversity", custom_palette_2groups, custom_palette_2groups))
+(fung.Observed.followup.1Y <- BoxplotMetadataParameters(fung.followup.1Y, "Shannon", "Wheeze3years", "WheezeMaCo : Nasal fungal diversity with wheeze follow up at 3 years", "Shannon diversity", custom_palette_2groups, custom_palette_2groups))
+
+(bact.Observed.followup.1Y <- BoxplotMetadataParameters(bact.followup.1Y, "Observed", "Wheeze3years", "WheezeMaCo : Nasal bacterial diversity with wheeze follow up at 3 years", "Observed diversity", custom_palette_2groups, custom_palette_2groups))
+(fung.Observed.followup.1Y <- BoxplotMetadataParameters(fung.followup.1Y, "Observed", "Wheeze3years", "WheezeMaCo : Nasal fungal diversity with wheeze follow up at 3 years", "Observed diversity", custom_palette_2groups, custom_palette_2groups))
+(vir.Observed.followup.1Y <- BoxplotMetadataParameters(vir.followup.1Y, "Observed", "Wheeze3years", "WheezeMaCo : Nasal viral diversity with wheeze follow up at 3 years", "Observed diversity", custom_palette_2groups, custom_palette_2groups))
+
+# Statistical tests
+wilcox.test(SampleDataframe(bact.followup.1Y)$Shannon ~ SampleDataframe(bact.followup.1Y)$Wheeze3years)
+wilcox.test(SampleDataframe(bact.followup.1Y)$Observed ~ SampleDataframe(bact.followup.1Y)$Wheeze3years)
+wilcox.test(SampleDataframe(fung.followup.1Y)$Shannon ~ SampleDataframe(fung.followup.1Y)$Wheeze3years)
+wilcox.test(SampleDataframe(fung.followup.1Y)$Observed ~ SampleDataframe(fung.followup.1Y)$Wheeze3years)
+```
+
+#### 3) Viruses investigation with wheeze metadata
 
 ```{r eval=T, warning=F, cache=T}
 # Add information for each virus
@@ -1139,7 +1164,7 @@ prop.test(table(sample_data(vir.wheeze.1Y)$Rhinovirus, sample_data(vir.wheeze.1Y
 prop.test(table(sample_data(vir.wheeze.1Y)$RSV, sample_data(vir.wheeze.1Y)$MoreThan2EpisodesWheeze))
 ```
 
-#### 5) Differential abundance testing
+#### 4) Differential abundance testing with wheeze metadata
 
 ```{r eval=T, warning=F, cache=T}
 # Calculate the number of DA ASVs for each covariate
@@ -1188,6 +1213,13 @@ table(fung.da.wheeze.hospital$res_diff$Comparison, fung.da.wheeze.hospital$res_d
 (fung.da.wheeze.hospital <- DAtestingPlotBar(fung.da.wheeze.hospital, "Yes - No", rep(custom_palette_2groups[2], 2), 1, "MaCo : Nasal fungal DA features wheeze hospital admissions (adjusted for sampling season)"))
 ```
 
+#### 5) Differential abundance testing with wheeze follow up
+
+```{r}
+bact.da.wheeze.followup <- DAtesting(bact.followup.1Y, "Wheeze3years","~Wheeze3years", level="ASV")
+table(bact.da.wheeze.followup$res_diff$Comparison, bact.da.wheeze.followup$res_diff$Significance)
+```
+
 # Gene expression
 
 ### HOST DATA IMPORT
@@ -1204,6 +1236,9 @@ source("../Scripts/Metadata_host_blood.R")
 # Save a version of metadata with subject number as row name (for later integration)
 metaS <- metadata
 rownames(metaS) <- paste0("S", metaS$Subjectnumber)
+
+# Keep metadata of interest
+metaS.subset <- metaS[, colnames(metaS) %in% c(covariates.all, "Timepoint", "Group", "HaemoStatus", "DayCareGroup", "Wheeze3years")]
 ```
 
 #### 2) Gene expression data import
@@ -1602,8 +1637,8 @@ metaS.1y$Timepoint <- round(round(day(as.period(interval(start=metaS.1y$Particip
 
 metaS.long <- rbind(metaS.1w, metaS.3m, metaS.6m, metaS.1y)
 
-# Prepare metadata file for longitudinal experiment
-rownames(metaS) <- paste0("S", metaS$Subjectnumber)
+# Keep metadata of interest
+metaS.long <- metaS.long[, colnames(metaS.long) %in% c(covariates.all, "Timepoint")]
 ```
 
 ### HOST DISEASE PHENOTYPE
@@ -1674,46 +1709,47 @@ rownames(Host.matrix.long) <- make.unique(rownames(Host.matrix.long))
 omicslist.long <- list(Nasal=as.matrix(Host.matrix.long), Bacteria=as.matrix(Bact.matrix.long), Fungi=as.matrix(Fung.matrix.long), Viruses=as.matrix(Vir.matrix.long))
 
 # Create a MultiAssayExperiment object
-omicsmae.long <- MultiAssayExperiment(experiments=omicslist.long, colData=DataFrame(metaS.long))
-omicsmae.long
+omicsmae_long <- MultiAssayExperiment(experiments=omicslist.long, colData=DataFrame(metaS.long))
+omicsmae_long
 ```
 
 #### 2) MOFA
 
 ```{r eval=T, warning=F, cache=T}
 # Create MOFA object
-MOFAobject.long <- create_mofa(omicsmae.long)
+MOFAobject_long <- MOFA2::create_mofa(omicsmae_long)
 
 # Set parameters
-DataOptions <- get_default_data_options(MOFAobject.long)
-ModelOptions <- get_default_model_options(MOFAobject.long)
+DataOptions <- MOFA2::get_default_data_options(MOFAobject_long)
+ModelOptions <- MOFA2::get_default_model_options(MOFAobject_long)
 ModelOptions$num_factors <- 3
-TrainOptions <- get_default_training_options(MOFAobject.long)
+TrainOptions <- MOFA2::get_default_training_options(MOFAobject_long)
 TrainOptions$seed <- 2
-MefistoOptions <- get_default_mefisto_options(MOFAobject.long)
+MefistoOptions <- MOFA2::get_default_mefisto_options(MOFAobject_long)
 MefistoOptions$scale_cov <- TRUE
-set_covariates(MOFAobject.long, covariates = "Timepoint")
+MOFA2::set_covariates(MOFAobject_long, covariates = "Timepoint")
 
 # Prepare MOFA and add time information
-MOFAobject.long <- prepare_mofa(MOFAobject.long, data_options = DataOptions, model_options = ModelOptions, training_options = TrainOptions, mefisto_options = MefistoOptions)
-MOFArun.long <- run_mofa(MOFAobject.long, use_basilisk = FALSE, save_data = FALSE)
+MOFAobject_long <-MOFA2:: prepare_mofa(MOFAobject_long, data_options = DataOptions, model_options = ModelOptions, training_options = TrainOptions, mefisto_options = MefistoOptions)
+saveRDS(MOFAobject_long, "MOFAobject_long.rds")
+MOFArun_long <- MOFA2::run_mofa(MOFAobject_long, use_basilisk = TRUE, outfile = "MOFArun_long.rds")
 ```
 
 #### 3) MOFA variance and factors
 
 ```{r}
 # Reload MOFA results
-(plot.data.overview.long <- plot_data_overview(MOFAobject.long, colors = custom_palette_omics1) +
+(plot.data.overview.long <- plot_data_overview(MOFAobject_long, colors = custom_palette_omics1) +
     theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)))
-(plot.MOFA.var.long <- MOFAvarianceexplained(MOFArun.long, custom_palette_omics1, title = "LoCo : MOFA variance explained"))
+(plot.MOFA.var.long <- MOFAvarianceexplained(MOFArun_long, custom_palette_omics1, title = "LoCo : MOFA variance explained"))
 
 # Plot top factors
-(MOFAfactorloadings(MOFArun.long, "Factor2", "Nasal", rep(custom_palette_omics1[2],2), 10, "LoCo : Nasal host Factor2 MOFA loadings"))
-(MOFAfactorloadings(MOFArun.long, "Factor2", "Bacteria", c(custom_palette_age[3], custom_palette_age[1]), 10, "LoCo : Nasal bacteria Factor3 MOFA loadings"))
-(MOFAfactorloadings(MOFArun.long, "Factor2", "Fungi", c(custom_palette_age[3], custom_palette_age[1]),  10, "LoCo : Nasal host Factor3 MOFA loadings"))
+(MOFAfactorloadings(MOFArun_long, "Factor2", "Nasal", rep(custom_palette_omics1[2],2), 10, "LoCo : Nasal host Factor2 MOFA loadings"))
+(MOFAfactorloadings(MOFArun_long, "Factor2", "Bacteria", c(custom_palette_age[3], custom_palette_age[1]), 10, "LoCo : Nasal bacteria Factor3 MOFA loadings"))
+(MOFAfactorloadings(MOFArun_long, "Factor2", "Fungi", c(custom_palette_age[3], custom_palette_age[1]),  10, "LoCo : Nasal host Factor3 MOFA loadings"))
 
 # Plot factor value with age
-(MOFAplotAge(MOFArun.long, "Factor2", custom_palette_age, "LoCo : MOFA Factor3 with age"))
+#(MOFAplotAge(MOFArun_long, "Factor2", custom_palette_age, "LoCo : MOFA Factor3 with age"))
 ```
 
 ### DISEASE MULTI-OMICS
@@ -1756,7 +1792,7 @@ omicslist <- list(Nasal=as.matrix(Host.matrix.nasal.immune), Blood=as.matrix(Hos
                   Bacteria=as.matrix(Bact.matrix), Fungi=as.matrix(Fung.matrix), Viruses=as.matrix(Vir.matrix))
 
 # Create a MultiAssayExperiment object
-omicsmae <- MultiAssayExperiment(experiments=omicslist, colData=DataFrame(metaS))
+omicsmae <- MultiAssayExperiment(experiments=omicslist, colData=DataFrame(metaS.subset))
 omicsmae
 ```
 
@@ -1774,15 +1810,17 @@ TrainOptions <- get_default_training_options(MOFAobject)
 TrainOptions$seed <- 2
 
 # Run MOFA
-MOFAobject <- prepare_mofa(MOFAobject, data_options = DataOptions, model_options = ModelOptions, training_options = TrainOptions)
-MOFArun <- run_mofa(MOFAobject, use_basilisk = FALSE, save_data = FALSE)
+MOFAobject_disease <- prepare_mofa(MOFAobject, data_options = DataOptions, model_options = ModelOptions, training_options = TrainOptions)
+saveRDS(MOFAobject_disease, "MOFAobject_disease.rds")
+MOFAobject_disease <- readRDS("MOFAobject_disease.rds")
+MOFArun <- run_mofa(MOFAobject_disease, use_basilisk = TRUE, outfile = "MOFA_disease.rds")
 ```
 
 #### 3) MOFA variance and factors
 
 ```{r eval=T, warning=F, cache=T}
 # Number of top loadings to display
-ntop <- 20
+ntop <- 10
 
 # Reload MOFA results
 (plot.data.overview <- plot_data_overview(MOFAobject, colors = custom_palette_omics2, covariate = "Bacteria") +
@@ -1791,9 +1829,11 @@ ntop <- 20
 
 # Plot factor value with group
 (plot.factor1.group <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "Group", "Latent Factor1", custom_palette_2groups, custom_palette_2groups))
-(plot.factor1.group <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "HaemoStatus", "Latent Factor1", custom_palette_age, custom_palette_age))
 (plot.factor1.daycare <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "DayCare1YEAR", "Latent Factor1", custom_palette_2groups, c("grey", "grey")))
 (plot.factor1.daycaregroup <- BoxplotBinaryMOFAfactor4groups(MOFArun, "Factor1", "DayCareGroup", "Latent Factor1", custom_palette_2groups, c(rep(custom_palette_2groups[1],2), rep(custom_palette_2groups[2],2))))
+
+(plot.factor1.3yearwheeze <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "Wheeze3years", "Latent Factor1", custom_palette_2groups, custom_palette_2groups))
+(plot.factor1.3yearwheeze <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "Wheeze3years", "Latent Factor1", custom_palette_2groups, custom_palette_2groups))
 
 # Plot factor value with group
 (plot.factor2.group <- BoxplotBinaryMOFAfactor(MOFArun, "Factor2", "Group", "Latent Factor2", custom_palette_2groups, custom_palette_2groups))
@@ -1803,16 +1843,13 @@ ntop <- 20
 
 # Plot factor 1 top features
 (plot.factor1.nasal.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Nasal", custom_palette_2groups, ntop, "MaCo : Nasal host Factor1 MOFA loadings"))
-(plot.factor1.blood.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Blood", custom_palette_2groups[2], ntop, "MaCo : Blood host Factor1 MOFA loadings"))
+(plot.factor1.blood.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Blood", custom_palette_2groups, ntop, "MaCo : Blood host Factor1 MOFA loadings"))
 (plot.factor1.bact.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Bacteria", custom_palette_2groups, ntop, "MaCo : Nasal bacteria Factor1 MOFA loadings"))
 ```
 
 #### 6) Local-systemic commonalities
 
 ```{r}
-# Set the number of top features to investigate
-ntop <- 20
-
 # Select top loading genes common between local and systemic gene expression
 (common.nasal.blood <- intersect(MOFAtoploadings(MOFArun, "Factor1", "Nasal", ntop)$Name, MOFAtoploadings(MOFArun, "Factor1", "Blood", ntop)$Name))
 
@@ -1825,101 +1862,59 @@ ggsave("../Figures/Individual/Venn.pdf", common.Venn, width=10, height=10, units
 
 #### 7) Monocytes markers
 
-```{r}
+```{r eval = F}
 # Check whether some of the markers are found
-rownames(Host.matrix.nasal)[grep("CCR", rownames(Host.matrix.nasal))]
+rownames(Host.matrix.nasal)[grep("SEL", rownames(Host.matrix.nasal))]
 
 # Set up human monocytes markers
-human.monocytes.classical <- c("CD14", "CCR2", "CCR5") # CCR2 not detected
-human.monocytes.intermediate <- c("CD14", "FCGR3A", "HLA-DRA") # CD16 is FCGR3A
+human.monocytes.classical <- c("CD14", "CCR2", "CCL2", "FCGR1A") 
+human.monocytes.intermediate <- c("CCR5") 
 human.monocytes.nonclassical <- c("FCGR3A", "CX3CR1",  "HLA-DRA")
 human.monocytes.markers <- c(human.monocytes.classical, human.monocytes.intermediate, human.monocytes.nonclassical)
+human.monocytes.markers <- c(human.monocytes.classical)
+# "FCGR1A" is CD64
+# CD16 is FCGR3A
+# Look if CCR2 and CD36 are detected
 
 # Extract gene expression matrices
 nasal.common.genes <- as.matrix(t(Host.matrix.nasal[rownames(Host.matrix.nasal) %in% common.nasal.blood, ]))
 blood.common.genes <- as.matrix(t(Host.matrix.blood[rownames(Host.matrix.blood) %in% common.nasal.blood, ]))
 nasal.monocytes.genes <- as.matrix(t(Host.matrix.nasal[rownames(Host.matrix.nasal) %in% human.monocytes.markers, ]))
+nasal.monocytes.genes <- nasal.monocytes.genes[,match(human.monocytes.markers, colnames(nasal.monocytes.genes))]
 blood.monocytes.genes <- as.matrix(t(Host.matrix.blood[rownames(Host.matrix.blood) %in% human.monocytes.markers, ]))
+blood.monocytes.genes <- blood.monocytes.genes[,match(human.monocytes.markers, colnames(blood.monocytes.genes))]
 
 # Perform correlation analyses
-nasal.monocytes.cor <- psych::corr.test(nasal.common.genes, nasal.monocytes.markers, method="spearman", adjust="fdr")
-nasal.monocytes.cor <- ggcorrplot(nasal.monocytes.cor$r, method = "circle", p.mat = nasal.monocytes.cor$p.adj, 
+nasal.monocytes.cor <- psych::corr.test(nasal.common.genes, nasal.monocytes.genes, method="spearman", adjust="fdr")
+(nasal.monocytes.cor <- ggcorrplot(nasal.monocytes.cor$r, method = "circle", p.mat = nasal.monocytes.cor$p.adj, 
            insig = "blank",  outline.color = "black", show.diag = TRUE, 
-           tl.srt = 90, colors = c("goldenrod3", "white", "darkorchid4")) + 
-  labs(title = "Correlations with monocytes markers")
-
+           tl.srt = 90, colors = c("goldenrod3", "white", "#964091")) + 
+  labs(title = "Correlations with monocytes markers"))
 ggsave("../Figures/Individual/Monocytes_markers.pdf", width=30, height=10, units="cm", useDingbats=FALSE)
 
-blood.monocytes.cor <- psych::corr.test(blood.common.genes, blood.monocytes.genes, method="spearman", adjust="fdr")
-ggcorrplot(blood.monocytes.cor$r, method = "circle", p.mat = blood.monocytes.cor$p.adj, 
+blood.monocytes.cor <- psych::corr.test(blood.common.genes, blood.monocytes.genes, method="spearman", adjust="none")
+(blood.monocytes.cor <- ggcorrplot(blood.monocytes.cor$r, method = "circle", p.mat = blood.monocytes.cor$p.adj, 
            insig = "blank",  outline.color = "black", show.diag = TRUE, 
-           tl.srt = 90, colors = c("goldenrod3", "white", "darkorchid4")) + 
-  labs(title = "Host blood common local-systemic genes with human circulating monocytes markers")
-
+           tl.srt = 90, colors = c("goldenrod3", "white", "#964091")) + 
+  labs(title = "Host blood common local-systemic genes with human circulating monocytes markers"))
 ```
 
 #### 5) OSM pathway investigation
 
 ```{r eval=T, warning=F, cache=T}
+common.genes <- c("TNFSF13B", "OSM", "AQP9", "ACVR1C")
+
 # Individual host datasets
-nasal.host.mae <- MultiAssayExperiment(experiments=list(Nasal=as.matrix(Host.matrix.nasal)), colData=DataFrame(metaS))
-blood.host.mae <- MultiAssayExperiment(experiments=list(Blood=as.matrix(Host.matrix.blood)), colData=DataFrame(metaS))
+nasal.host.mae <- MultiAssayExperiment(experiments=list(Nasal=as.matrix(Host.matrix.nasal)), colData=DataFrame(metaS.subset))
+(CCR2.TNFSF13B.plot <- CorrelationGeneGene(nasal.host.mae, "Nasal", "TNFSF13B", "CCR2", "Nasal CCR2 vs TNFSF13B expression"))
+(CCR2.OSM.plot <- CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "CCR2", "Nasal CCR2 vs OSM expression"))
+(CCR2.AQP9.plot <- CorrelationGeneGene(nasal.host.mae, "Nasal", "AQP9", "CCR2", "Nasal CCR2 vs AQP9 expression"))
+(CCR2.ACVR1C.plot <- CorrelationGeneGene(nasal.host.mae, "Nasal", "ACVR1C", "CCR2", "Nasal CCR2 vs ACVR1C expression"))
+```
 
-# Subset patients for which both blood and nasal gene expression are available
-host.mae <- MultiAssayExperiment(experiments=list(Nasal=as.matrix(Host.matrix.nasal), Blood=as.matrix(Host.matrix.blood)), colData=DataFrame(metaS))
-table(complete.cases(host.mae))
-host.mae.complete <- host.mae[, complete.cases(host.mae), ]
-
-# Subset patients for which both nasal gene expression and nasal bacteria are available
-nasal.host.bact.mae <- MultiAssayExperiment(experiments=list(Nasal=as.matrix(Host.matrix.nasal),  Bacteria=as.matrix(Bact.matrix)), colData=DataFrame(metaS))
-table(complete.cases(nasal.host.bact.mae))
-nasal.host.bact.mae.complete <- nasal.host.bact.mae[, complete.cases(nasal.host.bact.mae ), ]
-
-# Create a dataframe with matching blood 
-(nasal.blood.OSM <- CorrelationNasalBlood(host.mae.complete, gene = common.nasal.blood[1], title = "MaCo : Host nasal-blood gene expression (matching samples)"))
-(nasal.blood.IL36A <- CorrelationNasalBlood(host.mae.complete, gene = "IL36A", title = "MaCo : Host nasal-blood IL36A gene expression (matching samples)"))
-(nasal.blood.EGFR <- CorrelationNasalBlood(host.mae.complete, gene = "EGFR", title = "MaCo : Host nasal-blood EGFR gene expression (matching samples)"))
-
-# OSM pathway investigation
-CorrelationGeneBact(nasal.host.bact.mae.complete, gene = "OSM", bacteria = "Haemophilus_influenzae_19", "Nasal OSM vs Haemophilus_influenzae_19 correlation")
-CorrelationGeneBact(nasal.host.bact.mae.complete, gene = "OSM", bacteria = "Moraxella_3", "Nasal OSM vs Moraxella_3 correlation")
-CorrelationGeneBact(nasal.host.bact.mae.complete, gene = "OSM", bacteria = "Moraxella_catarrhalis_12", "Nasal OSM vs Moraxella_catarrhalis_12 correlation")
-CorrelationGeneGene(blood.host.mae, "Blood", "OSM", "EGFR", "OSM vs EGFR")
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "STAT3", "OSM vs STAT3")
-CorrelationGeneGene(blood.host.mae, "Blood", "OSM", "EGFR", "Blood OSM vs EGFR")
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "EGFR", "Nasal OSM vs EGFR")
-CorrelationGeneGene(blood.host.mae, "Blood", "OSM", "EGFR", "OSM vs EGFR")
-CorrelationGeneGene(nasal.host.mae, "Nasal", "CCL20", "EGFR", "OSM vs EGFR")
-
-# OSM receptors investigation
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "OSMR", "Nasal OSM with its receptor OSMR")
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSMR", "LIFR", "Nasal OSM receptors type I: LIFR vs IL6ST (gp130)")
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSMR", "IL6ST", "Nasal OSM receptors type II: OSMR vs IL6ST (gp130)")
-
-# OSM downstream pathways : JAK/STAT
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "JAK1", "Nasal OSM with JAK/STAT pathway member JAK1") # ns
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "JAK2", "Nasal OSM with JAK/STAT pathway member JAK2") # Positive 0.44 ***
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "JAK3", "Nasal OSM with JAK/STAT pathway member JAK3") # Positive 0.8 ***
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "TYK2", "Nasal OSM with JAK/STAT pathway member TYK2") # Positive 0.38 ***
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "STAT1", "Nasal OSM with JAK/STAT pathway member STAT1") # ns
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "STAT2", "Nasal OSM with JAK/STAT pathway member STAT2") # ns
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "STAT3", "Nasal OSM with JAK/STAT pathway member STAT3") # Negative -0.54 ***
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "STAT4", "Nasal OSM with JAK/STAT pathway member STAT4") # ns
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "STAT5B", "Nasal OSM with JAK/STAT pathway member STAT5B") # Positive 0.41 ***
-
-# OSM downstream pathways : ERK pathways
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "IL17RA", "Nasal OSM with ERK pathway member JAK1") # ns
-
-# OSM downstream pathways : ERK1/ERK2
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "MAPK2", "Nasal OSM with JAK/STAT pathway member JAK1") # ns
-
-# OSM with asthma
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSM", "IL33", "Nasal OSM with ERK pathway member JAK1") # ns
-
-
-
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSMR", "LIFR", "Nasal OSM receptors type I: LIFR vs IL6ST (gp130)")
-CorrelationGeneGene(nasal.host.mae, "Nasal", "OSMR", "IL6ST", "Nasal OSM receptors type II: OSMR vs IL6ST (gp130)")
+# BREAK #############
+```{r eval=FALSE}
+BREAK
 ```
 
 ### SINGLE CELL ANALYSIS
@@ -1929,100 +1924,143 @@ CorrelationGeneGene(nasal.host.mae, "Nasal", "OSMR", "IL6ST", "Nasal OSM recepto
 This part is run on the cluster (computationally intensive).
 
 ```{r eval=F}
-### PASTE CODE HERE ###
+# Load the HLCA core dataset and select nasal cells
+HLCA_nose <- readRDS("local.rds")
+
+# Convert Ensembl IDs to gene symbols
+Temp_Data <- GetAssayData(HLCA_nose)
+Temp_Meta <- HLCA_nose@meta.data
+new_rownames <- as.character(droplevels(HLCA_nose@assays[["RNA"]]@meta.features[["feature_name"]]))
+rownames(Temp_Data) <- new_rownames
+HLCA_nose <- CreateSeuratObject(counts = Temp_Data, meta.data = Temp_Meta)
+
+# Remove cells with unknown annotation
+HLCA_nose <- subset(HLCA_nose, subset = ann_finest_level != "Unknown")
+HLCA_nose <- subset(HLCA_nose, subset = tissue == "nose")
+
+# Split the studies for batch correction
+studies.list <- SplitObject(HLCA_nose, split.by = "study")
+
+# Normalize and identify variable features for each study independently
+studies.list <- lapply(X = studies.list, FUN = function(x) {
+    x <- SCTransform(x, vst.flavor = "v2")
+    x <- FindVariableFeatures(x, selection.method = "vst")
+})
+
+# Select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = studies.list, nfeatures = 2000)
+
+# Run PCA on each dataset using these features
+studies.list <- lapply(X = studies.list, FUN = function(x) {
+    x <- ScaleData(x, features = features)
+    x <- RunPCA(x, features = features)
+})
+
+# Find integration anchors
+anchors <- FindIntegrationAnchors(object.list = studies.list, anchor.features = features, reduction = "rpca", k.anchor = 50)
+
+# Integrate data
+common.genes <- c("TNFSF13B", "AQP9", "OSM", "ACVR1C")
+features.interest <- c(features, common.genes)
+HLCA_nose_comb <- IntegrateData(anchorset = anchors, features.to.integrate = features.interest)
+DefaultAssay(HLCA_nose_comb) <- "integrated"
+
+# Run downstream analyses
+HLCA_nose_comb <- ScaleData(HLCA_nose_comb)
+HLCA_nose_comb <- RunPCA(HLCA_nose_comb, npcs = 20)
+HLCA_nose_comb <- RunUMAP(HLCA_nose_comb, reduction = "pca", dims = 1:20)
+
+# Subset myeloid cells
+HCLA_nose_comb_myeloid <- subset(HLCA_nose_comb, subset = ann_level_2 == "Myeloid")
+
+# Run downstream analyses
+HCLA_nose_comb_myeloid <- RunPCA(HCLA_nose_comb_myeloid, npcs = 20)
+HCLA_nose_comb_myeloid <- RunUMAP(HCLA_nose_comb_myeloid, reduction = "pca", dims = 1:20)
+
+# Save rds files
+saveRDS(HCLA_nose_comb_myeloid, "HCLA_nose_comb_myeloid_core.rds")
+saveRDS(HLCA_nose_comb, "HLCA_nose_comb_core.rds")
 ```
 
-#### 2) UMAP of nasal subset
+#### 2) UMAP and dotplots of genes of interest
 
-```{r}
+```{r eval=F}
+# Load datasets
+HCLA_data_nose <- readRDS("../Databases/HLCA_nose_comb_core.rds")
+HCLA_data_nose_myeloid <- readRDS("../Databases/HCLA_nose_comb_myeloid_core.rds")
+```
+
+```{r eval=F}
 # Single cell palette
-custom_palette_singlecell <- c(paletteer_dynamic("cartography::sand.pal", 4), paletteer_dynamic("cartography::wine.pal", 3), "lightpink4", "grey")
-
-# Reload 
-HCLA_data_nose <- readRDS("../Databases/HLCA_complete_nose_comb.rds")
-table(HCLA_data_nose@meta.data$tissue_level_3)
-table(HCLA_data_nose@meta.data$disease)
-sort(table(HCLA_data_nose@meta.data$cell_type), decreasing = TRUE)
-
-# Check elbow plot
-ElbowPlot(HCLA_data_nose, ndims = 30)
+custom_palette_singlecell1 <- c(paletteer_dynamic("cartography::sand.pal", 3), paletteer_dynamic("cartography::wine.pal", 3), "lightpink3", "grey")
+custom_palette_singlecell2 <- c(paletteer_dynamic("cartography::sand.pal", 2), paletteer_dynamic("cartography::wine.pal", 3))
 
 # Harmonize airway epithelium label
 HCLA_data_nose@meta.data$ann_level_2.2 <- ifelse(HCLA_data_nose@meta.data$ann_level_2 == "Alveolar epithelium", "Airway epithelium", HCLA_data_nose@meta.data$ann_level_2)
 
-(allcells.ann2.umap <- DimPlot(HCLA_data_nose, group.by = "ann_level_2.2", label = TRUE, repel = TRUE, label.size = 5, raster = FALSE, cols = custom_palette_singlecell) +
-    labs(title = "HCLA : core nasal subset") +
-    theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(),
+# Plot all nasal cells
+(allcells.ann2.umap <- DimPlot(HCLA_data_nose, group.by = "ann_level_2.2", label = TRUE, repel = TRUE, label.size = 5, raster = FALSE,
+                               cols = custom_palette_singlecell1) +
+    labs(title = "HCLA core : nasal tissue cells") +
+    theme(axis.text.x=element_blank(), legend.position = "none", axis.text.y=element_blank(), axis.ticks=element_blank(),
           legend.box.background=element_rect(), text=element_text(size=12)))
 
-ggsave("../Figures/Individual/Single_cell_ann2.pdf", allcells.ann2.umap, width=20, height=20, units="cm", useDingbats=FALSE)
+#ggsave("../Figures/Individual/Single_cell_general_annotation.pdf", allcells.ann2.umap, width=20, height=20, units="cm", useDingbats=FALSE)
 
 # List of genes of interest
-common.genes <- c("CSF2RA", "IL36A", "TNFSF13B", "TLR8", "AQP9", "OSM", "ACVR1C")
+common.genes <- c("ACVR1C", "AQP9", "OSM", "TNFSF13B")
 
 # Check expression of our genes of interest
-(allcells.ann2.dotplot <- DotPlot(HCLA_data_nose, features = common.genes, dot.min = 0.005, group.by = "ann_level_2.2", dot.scale = 20, scale.by = "size", assay = "RNA", 
-        cols = scales::alpha(c(custom_palette_singlecell[1], custom_palette_singlecell[6]), 0.75)) +
-  labs(title = "HCLA : expression of shared local and systemic genes") +
-  theme(legend.box.background=element_rect(), text=element_text(size=12)))
+(allcells.ann2.dotplot <- DotPlot(HCLA_data_nose, features = common.genes, dot.min = 0, group.by = "ann_level_2.2", dot.scale = 15, scale.by = "size") +
+    labs(title = "Local-systemic Factor1 gene set expression in nasal cells subset") +
+    geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) +
+    scale_color_gradient2(low = "goldenrod2", mid = "white", high = "#964091") +
+    theme(legend.box.background=element_rect(), 
+          #legend.position = "none", 
+          text=element_text(size=12)))
+ggsave("../Figures/Individual/Single_cell_ann2_dotplot.pdf", allcells.ann2.dotplot, width=50, height=15, units="cm", useDingbats=FALSE)
 
-ggsave("../Figures/Individual/Single_cell_ann2_dotplot.pdf", allcells.ann2.dotplot, width=20, height=15, units="cm", useDingbats=FALSE)
+# Subset myeloid cells
+HCLA_data_nose_myeloid <- FindNeighbors(HCLA_data_nose_myeloid, dims = 1:10)
+HCLA_data_nose_myeloid <- FindClusters(HCLA_data_nose_myeloid , resolution = 0.25, graph.name = "integrated_nn")
 
-# Subset the myeloid cells
-HCLA_data_nose_myeloid <- subset(HCLA_data_nose, subset = ann_level_2.2 == "Myeloid")
-ElbowPlot(HCLA_data_nose_myeloid, ndims = 30)
+# Use previous labels to characterize the clusters
+DimPlot(HCLA_data_nose_myeloid, group.by = "seurat_clusters", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
+DimPlot(HCLA_data_nose_myeloid, group.by = "cell_type", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
+DimPlot(HCLA_data_nose_myeloid, group.by = "ann_finest_level", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
 
-# Run downstream analyses
-HCLA_data_nose_myeloid  <- ScaleData(HCLA_data_nose_myeloid )
-HCLA_data_nose_myeloid  <- RunPCA(HCLA_data_nose_myeloid , npcs = 10)
-HCLA_data_nose_myeloid  <- RunUMAP(HCLA_data_nose_myeloid , reduction = "pca", dims = 1:10)
-HCLA_data_nose_myeloid  <- FindNeighbors(HCLA_data_nose_myeloid , reduction = "pca", dims = 1:10)
-HCLA_data_nose_myeloid  <- FindClusters(HCLA_data_nose_myeloid , resolution = 0.5)
+# Reannotate clusters
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_manual <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==0, "Dendritic cells", NA)
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_manual <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==1, "Classical monocytes", HCLA_data_nose_myeloid@meta.data$seurat_clusters_manual)
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_manual <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==2, "Macrophages", HCLA_data_nose_myeloid@meta.data$seurat_clusters_manual)
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_manual <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==3, "Plasmacytoid dendritic cells", HCLA_data_nose_myeloid@meta.data$seurat_clusters_manual)
+HCLA_data_nose_myeloid@meta.data$seurat_clusters_manual <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==4, "Mast cells", HCLA_data_nose_myeloid@meta.data$seurat_clusters_manual)
 
-# Perform UMAP on the PCA results
-p1 <- DimPlot(HCLA_data_nose_myeloid, group.by = "seurat_clusters", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
-p2 <- DimPlot(HCLA_data_nose_myeloid, group.by = "ann_level_3", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
-p3 <- DimPlot(HCLA_data_nose_myeloid, group.by = "ann_level_4", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
-p4 <- DimPlot(HCLA_data_nose_myeloid, group.by = "ann_level_5", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
-p5 <- DimPlot(HCLA_data_nose_myeloid, group.by = "ann_finest_level", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
-p6 <- DimPlot(HCLA_data_nose_myeloid, group.by = "cell_type", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap")
+# Plot myeloid cells
+(myeloid.anno.umap <- DimPlot(HCLA_data_nose_myeloid, group.by = "seurat_clusters_manual", label = TRUE, repel = TRUE, label.size = 5,
+                             reduction = "umap", cols = custom_palette_singlecell2) +
+    labs(title = "HCLA core : nasal myeloid cells") +
+    theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(),
+          legend.position = "none", 
+          legend.box.background=element_rect(), text=element_text(size=12)))
 
-t <- ggarrange(p1, p2, p3, p4, p5, p6, nrow = 2, ncol = 3)
-ggsave("../Figures/Individual/Single_cell_clusters.pdf", t, width=80, height=50, units="cm", useDingbats=FALSE)
+# Create dotplots for common genes
+(myeloid.anno.dotplot <- DotPlot(HCLA_data_nose_myeloid, features = common.genes, dot.min = 0, group.by = "seurat_clusters_manual", dot.scale = 20,
+                                 scale.by = "size", cols = scales::alpha(c("goldenrod2", "#964091"), 0.75)) +
+    labs(title = "Local-systemic Factor1 gene set expression in nasal myeloid cells subset") +
+    geom_point(aes(size=pct.exp), shape = 21, colour="black", stroke=0.5) +
+    scale_color_gradient2(low = "goldenrod2", mid = "white", high = "#964091") +
+    theme(legend.box.background=element_rect(), 
+          #legend.position = "none", 
+          text=element_text(size=12)))
+ggsave("../Figures/Individual/Single_cell_myeloid_dotplot.pdf", allcells.ann2.dotplot, width=50, height=15, units="cm", useDingbats=FALSE)
 
-# Re-annotate clusters
-FindAllMarkers(HCLA_data_nose_myeloid)
-markers %>%
-    group_by(cluster) %>%
-    top_n(n = 10, wt = avg_log2FC) -> top10
-DoHeatmap(HCLA_data_nose_myeloid, features = top10$gene) + NoLegend()
-
-
-HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==0, "Classical monocytes", NA)
-HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==1, "", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
-HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==2, "", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
-HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==3, "", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
-HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==4, "Mast cells", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
-HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==5, "", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
-HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==6, "", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
-HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==7, "Plasmacytoid dendritic cell", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
-HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation <- ifelse(HCLA_data_nose_myeloid@meta.data$seurat_clusters==8, "", HCLA_data_nose_myeloid@meta.data$seurat_clusters_annotation)
-
-
-DimPlot(HCLA_data_nose_myeloid, group.by = "seurat_clusters", label = TRUE, repel = TRUE, label.size = 5, reduction = "umap") +
-  labs(title = "HCLA : core nasal subset") +
-  theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(),
-        #legend.position = "none", 
-        legend.box.background=element_rect(), text=element_text(size=12))
-
-# Create violin plots for common genes
-DotPlot(HCLA_data_nose_myeloid, features = common.genes, dot.min = 0.05, group.by = "cell_type", dot.scale = 20, scale.by = "size")
-ggsave("../Figures/Main/Fig5.pdf", width=20, height=20, units="cm", useDingbats=FALSE)
-FeaturePlot(HCLA_data_nose_myeloid, features = common.genes, pt.size = 0.5, cols = scales::alpha(c(custom_palette_singlecell[1], custom_palette_singlecell[6]), 0.75)) 
-ggsave("../Figures/Main/Fig6.pdf", width=40, height=20, units="cm", useDingbats=FALSE)
+# Save figures 
+saveRDS(allcells.ann2.umap, "../Figures/Individual/allcells.ann2.umap.rds")
+saveRDS(allcells.ann2.dotplot, "../Figures/Individual/allcells.ann2.dotplot.rds")
+saveRDS(myeloid.anno.umap, "../Figures/Individual/myeloid.anno.umap.rds")
+saveRDS(myeloid.anno.dotplot, "../Figures/Individual/myeloid.anno.dotplot.rds")
 ```
-
-
 
 https://research.cchmc.org/pbge/lunggens/CellRef/LungMapCellRef.html?ensid=ENSG00000169508&geneid=GPR183&spe=HS
 
@@ -2031,37 +2069,40 @@ https://research.cchmc.org/pbge/lunggens/CellRef/LungMapCellRef.html?ensid=ENSG0
 Longitudinal analysis of all omics.
 
 ```{r eval=T, warning=F, cache=T}
+# Set size
+label.size <- 20
+
 (plot1 <- ggarrange(plot.nasal.PCA.Age, NA, bact.ordi.long, NA, fung.ordi.long,
                     ncol = 5, nrow = 1, align = "hv",
                     widths = c(1, 0.2, 1, 0.2, 1),
                     labels = c("a","","b", "", "c"),
-                    font.label = list(size=10)))
+                    font.label = list(size=label.size)))
 
 (plot2 <-  ggarrange(host.long.distance, NA, bact.long.distance, NA, fung.long.distance,
                     ncol = 5, nrow = 1, align = "hv",
                     widths = c(1, 0.2, 1, 0.2, 1),
                     labels = c("d","", "e", "", "f"),
-                    font.label = list(size=10)))
+                    font.label = list(size=label.size)))
 
 (plot3 <- ggarrange(virus.plot.detection.long, NA, virus.plot.details.long, NA, bact.Observed.age, NA, fung.Observed.age, 
                     ncol = 7, nrow = 1, align = "hv",
                     widths = c(1, 0.2, 1, 0.2, 1.25, 0.2, 1.25),
                     labels = c("g","", "h", "", "i", "", "j"),
-                    font.label = list(size=10)))
+                    font.label = list(size=label.size)))
 
 (plot4 <- ggarrange(plot.volcano.Age, NA, plot.immune.pathway.age, NA, bact.long.age.bar, 
                     ncol = 5, nrow = 1, align = "hv",
                     widths = c(1.25, 0.2, 1, 0.2, 1),
                     labels = c("k","", "l", "", "m"),
-                    font.label = list(size=10)))
+                    font.label = list(size=label.size)))
 
-(Figure2 <- ggarrange(plot1, plot2, plot3, plot4,
-                      ncol = 1, nrow = 4, align = "hv",
-                      heights = c(1, 1, 1, 1),
-                      font.label = list(size=10)))
+(Figure2 <- ggarrange(plot1, NA, plot2, NA, plot3, NA, plot4,
+                      ncol = 1, nrow = 7, align = "hv",
+                      heights = c(1, 0.1, 1, 0.1, 1, 0.1, 1),
+                      font.label = list(size=label.size)))
 
 # Save figure
-ggsave("../Figures/Main/Figure2.pdf", Figure2, width=50, height=45, units="cm", useDingbats=FALSE)
+ggsave("../Figures/Main/Figure2.pdf", Figure2, width=45, height=42, units="cm", useDingbats=FALSE)
 ```
 
 ### ***Figure 3***
@@ -2075,48 +2116,54 @@ label.size <- 20
 # Create plots
 (plot1 <- all.cor.factors) 
 
-(plot2 <- ggarrange(alpha.bact.colds, NA, alpha.bact.abx, NA, alpha.bact.daycare, NA, alpha.bact.siblings, 
-                    ncol = 7, nrow = 1, align = "hv",
-                    widths = c(1, 0.25, 1, 0.25, 1, 0.25, 1),
-                    labels = c("b","","c", "", "d", "", "e"),
+(plot2 <- ggarrange(alpha.bact.daycare, NA, alpha.vir.daycare,
+                    ncol = 3, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1),
+                    labels = c("b","","c"),
                     font.label = list(size=label.size)))
 
-(plot3 <- ggarrange(alpha.fung.season, NA, alpha.vir.daycare, NA, alpha.vir.abx, NA, alpha.vir.abxpregnancy, NA, alpha.vir.delivery, 
-                    ncol = 9, nrow = 1, align = "hv",
-                    widths = c(1.5, 0.25, 1, 0.25, 1, 0.25, 1, 0.25, 1),
-                    labels = c("f", "", "g","","h", "", "i", "", "j"),
+(plot3 <- ggarrange(alpha.bact.abx, NA, alpha.vir.abx,
+                    ncol = 3, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1),
+                    labels = c("d", "", "e"),
                     font.label = list(size=label.size)))
 
 (plot23 <- ggarrange(plot2, NA, plot3,
                      ncol = 1, nrow = 3, align = "hv",
-                     heights = c(1, 0.25, 1),
+                     heights = c(1, 0.1, 1),
                      font.label = list(size=label.size)))
 
-(plot123 <- ggarrange(plot1, plot23,
-                     ncol = 2, nrow = 1, align = "hv",
-                     labels = c("a", ""),
-                     widths = c(1, 4),
+(plot123 <- ggarrange(plot1, NA, plot23,
+                     ncol = 3, nrow = 1, align = "hv",
+                     labels = c("a", "", ""),
+                     widths = c(1, 0.25, 1.5),
                      font.label = list(size=label.size)))
 
-(plot4 <- ggarrange(host.nasal.covariates.plot, NA, host.blood.covariates.plot, NA, covariates.da.bact.plot, NA, covariates.da.fung.plot, 
-                    ncol = 7, nrow = 1, align = "hv",
-                    widths = c(1, 0.25, 1, 0.25, 1, 0.25, 1),
-                    labels = c("k","","l", "", "m", "", "n"),
+(plot4 <- ggarrange(host.nasal.covariates.plot, NA, host.blood.covariates.plot, 
+                    ncol = 3, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1),
+                    labels = c("f","","g"),
                     font.label = list(size=label.size)))
 
-(plot5 <- ggarrange(bact.da.colds.bar, NA, bact.da.daycare.bar, NA, bact.da.siblings.bar, NA, fung.da.season.bar, 
-                    ncol = 7, nrow = 1, align = "hv",
-                    widths = c(1, 0.25, 1, 0.25, 1, 0.25, 1),
-                    labels = c("o","","p", "", "q", "", "r"),
+(plot5 <- ggarrange(covariates.da.bact.plot, NA, bact.da.daycare.bar,
+                    ncol = 3, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1),
+                    labels = c("h","","i"),
                     font.label = list(size=label.size)))
 
-(Figure3 <- ggarrange(plot123, plot4, NA, plot5,
-                      ncol = 1, nrow = 4, align = "hv",
-                      heights = c(2, 1, 0.1, 1),
+(plot6 <- ggarrange(covariates.da.fung.plot, NA,  fung.da.season.bar,
+                    ncol = 3, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1),
+                    labels = c("j","","k"),
+                    font.label = list(size=label.size)))
+
+(Figure3 <- ggarrange(plot123, NA, plot4, NA, plot5, NA, plot6,
+                      ncol = 1, nrow = 7, align = "hv",
+                      heights = c(1.5, 0.1, 1, 0.1, 1, 0.1, 1),
                       font.label = list(size=label.size)))
 
 # Save figure
-ggsave("../Figures/Main/Figure3.pdf", Figure3, width=55, height=45, units="cm", useDingbats=FALSE)
+ggsave("../Figures/Main/Figure3.pdf", Figure3, width=25, height=55, units="cm", useDingbats=FALSE)
 ```
 
 ### ***Figure 4***
@@ -2128,104 +2175,92 @@ Wheeze 1 year cohort.
 label.size <- 20
 
 # Create plots
-(plot1 <- ggarrange(plot.PCA.nasal.Disease, NA, plot.PCA.blood.Disease, NA, bact.ordi.1y,
-                    ncol = 5, nrow = 1, align = "hv",
-                    widths = c(1, 0.25, 1,  0.25, 1),
-                    labels = c("a","","b", "", "c"),
-                    font.label = list(size=label.size)))
-
-(plot2.1 <- ggarrange(bact.Observed.1Y, NA, fung.Observed.1Y,
+(plot1 <- ggarrange(bact.Observed.1Y, NA, fung.Observed.1Y, 
                     ncol = 3, nrow = 1, align = "hv",
                     widths = c(1, 0.1, 1),
-                    labels = c("e", "", "f"),
+                    labels = c("a", "", "b"),
                     font.label = list(size=label.size)))
 
-(plot2.2 <- ggarrange(virus.plot.wheeze, NA, virus.plot.details.wheeze,
+(plot2 <- ggarrange(virus.plot.wheeze, NA, virus.plot.details.wheeze,
                     ncol = 3, nrow = 1, align = "hv",
                     widths = c(1, 0.1, 1),
-                    labels = c("g", "", "h"),
-                    font.label = list(size=label.size)))
-
-(plot2 <- ggarrange(fung.ordi.1y, NA, plot2.1, NA, plot2.2,
-                    ncol = 5, nrow = 1, align = "hv",
-                    widths = c(1, 0.25, 1,  0.25, 1),
-                    labels = c("d","","", "", ""),
+                    labels = c("c", "", "d"),
                     font.label = list(size=label.size)))
   
-(plot3 <- ggarrange(plot.volcano.nasal.Disease, NA, bact.da.disease, 
+(plot3 <- plot.volcano.nasal.Disease)
+
+(plot4 <- ggarrange(bact.da.disease, NA, bact.da.disease.adj, 
                     ncol = 3, nrow = 1, align = "hv",
-                    widths = c(2, 0.25, 1.5),
-                    labels = c("h","","i"),
+                    widths = c(1, 0.1, 1),
+                    labels = c("f", "", "g"),
                     font.label = list(size=label.size)))
 
-(plot4 <- ggarrange(bact.da.disease.adj, NA, NA, 
-                    ncol = 3, nrow = 1, align = "hv",
-                    widths = c(1, 1, 1.5),
-                    labels = c("j","k","l"),
-                    font.label = list(size=label.size)))
-
-(plot5 <- ggarrange(all.cor.factors.wheeze, NA, alpha.bact.wheeze.episodes, NA, bact.da.wheeze.episodes, 
-                    ncol = 5, nrow = 1, align = "hv",
-                    widths = c(2, 0.25, 1, 0.25, 2),
-                    labels = c("m","","n", "", "o"),
-                    font.label = list(size=label.size)))
-
-
-Figure4 <- ggarrange(plot1, plot2, plot3, plot4, plot5, 
-                      ncol = 1, nrow = 5, align = "hv",
-                      heights = c(1.2, 1.2, 1.5, 1.2, 1.2),
-                      font.label = list(size=label.size))
-
+Figure4 <- ggarrange(plot1, NA, plot2, NA, plot3, NA, plot4, NA, NA,
+                     ncol = 1, nrow = 9, align = "hv",
+                     heights = c(1, 0.1, 1, 0.1, 1, 0.1, 1, 0.1, 1),
+                     labels = c("", "", "", "", "", "", "", "", "h"),
+                     font.label = list(size=label.size))
 # Save figure
-ggsave("../Figures/Main/Figure4.pdf", Figure4, width=35, height=40, units="cm", useDingbats=FALSE)
+ggsave("../Figures/Main/Figure4.pdf", Figure4, width=22, height=48, units="cm", useDingbats=FALSE)
 ```
 
 ### ***Figure 5***
+
+```{r}
+# Reload single cell plots
+allcells.ann2.umap <- readRDS("../Figures/Individual/allcells.ann2.umap.rds")
+allcells.ann2.dotplot <- readRDS("../Figures/Individual/allcells.ann2.dotplot.rds")
+myeloid.anno.umap <- readRDS("../Figures/Individual/myeloid.anno.umap.rds")
+myeloid.anno.dotplot <- readRDS("../Figures/Individual/myeloid.anno.dotplot.rds")
+```
 
 ```{r eval=T, warning=F, cache=T}
 # Set size
 label.size <- 20
 
 # Create plots
-(plot1 <- ggarrange(plot.data.overview, NA, plot.MOFA.var,
-                    ncol = 3, nrow = 1, align = "hv",
-                    widths = c(1, 0.25, 1),
-                    labels = c("a","","b"),
+(plot1 <- ggarrange(plot.MOFA.var, NA, plot.factor1.group, NA, plot.factor1.daycaregroup,
+                    ncol = 5, nrow = 1, align = "hv",
+                    widths = c(2, 0.25, 1, 0.25, 2),
+                    labels = c("a","","b", "", "c"),
                     font.label = list(size=label.size)))
 
-(plot2 <- ggarrange(plot.factor1.group, NA, plot.factor1.daycaregroup,
+(plot2 <- ggarrange(plot.factor1.nasal.loadings, NA, plot.factor1.blood.loadings, NA, plot.factor1.bact.loadings,
+                    ncol = 5, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 1, 0.25, 1.25),
+                    labels = c("d","","e", "", "f"),
+                    font.label = list(size=label.size)))
+
+(plot3 <- ggarrange(allcells.ann2.umap, NA, allcells.ann2.dotplot,
                     ncol = 3, nrow = 1, align = "hv",
                     widths = c(1, 0.25, 2),
-                    labels = c("c","","d"),
+                    labels = c("g","","h"),
                     font.label = list(size=label.size)))
 
-(plot3 <- plot.factor1.nasal.loadings)
-
-(plot4 <- ggarrange(plot.factor1.blood.loadings, plot.factor1.bact.loadings,
-                    ncol = 1, nrow = 2, align = "hv",
-                    widths = c(1, 1),
-                    labels = c("f","g"),
-                    font.label = list(size=label.size)))
-
-(plot34 <- ggarrange(plot3, NA, plot4,
+(plot4 <- ggarrange(myeloid.anno.umap, NA, myeloid.anno.dotplot,
                     ncol = 3, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 2),
+                    labels = c("g","","h"),
+                    font.label = list(size=label.size)))
+
+(plot5 <- ggarrange(CCR2.ACVR1C.plot, NA, CCR2.AQP9.plot, CCR2.OSM.plot, NA, CCR2.TNFSF13B.plot,
+                    ncol = 3, nrow = 2, align = "hv",
                     widths = c(1, 0.25, 1),
-                    labels = c("e","",""),
+                    labels = c("j","","k", "l", "", "m"),
                     font.label = list(size=label.size)))
 
-(plot5 <- ggarrange(nasal.blood.OSM, NA, nasal.blood.AQP9, NA, nasal.blood.ACVR1C,
-                    ncol = 5, nrow = 1, align = "hv",
-                    widths = c(1, 0.25, 1, 0.25, 1),
-                    labels = c("f","","g", "", "h"),
+(plot6 <- ggarrange(nasal.monocytes.cor, NA, plot5,
+                    ncol = 3, nrow = 1, align = "hv",
+                    widths = c(1, 0.25, 2),
+                    labels = c("i","", ""),
                     font.label = list(size=label.size)))
 
-Figure5 <- ggarrange(plot1, plot2, plot34, plot5, 
-                      ncol = 1, nrow = 4, align = "hv",
-                      heights = c(1, 1, 1.5, 1),
-                      font.label = list(size=label.size))
-
+Figure5 <- ggarrange(plot1, NA, plot2, NA, plot3, NA, plot4, NA, plot6,
+                     ncol = 1, nrow = 9, align = "hv",
+                     heights = c(1, 0.1, 1, 0.1, 1, 0.1, 1, 0.1, 1.5),
+                     font.label = list(size=label.size))
 # Save figure
-ggsave("../Figures/Main/Figure5.pdf", Figure5, width=25, height=45, units="cm", useDingbats=FALSE)
+ggsave("../Figures/Main/Figure5.pdf", Figure5, width=35, height=60, units="cm", useDingbats=FALSE)
 ```
 
 ```{r render, eval=F}
@@ -2234,6 +2269,9 @@ ggsave("../Figures/Main/Figure5.pdf", Figure5, width=25, height=45, units="cm", 
 rmarkdown::render('project-breathingtogether-group1.Rmd')
 ```
 
+OSM, AQP9 and Haemophilus influenza and Moraxella catarrhalis enough to predict wheeze?
+
+ML model based on 2 bacterial and 2 genes (independently or together)
 
 ```{r}
 

@@ -999,7 +999,7 @@ MOFAvarianceexplained <- function(MOFArun, palette, title) {
 MOFAfactorloadings <- function(MOFArun, factor, omics, palette, number_features, title){
   
   # Get factor values
-  df <- get_weights(MOFArun, scale = TRUE)[[omics]]
+  df <- get_weights(MOFArun, scale = FALSE)[[omics]]
   filtered_df <- as.data.frame(df[ ,factor])
   filtered_df$Feature <- rownames(filtered_df)
   filtered_df <- filtered_df[order(abs(filtered_df[,1]), decreasing = TRUE), ]
@@ -1029,6 +1029,27 @@ MOFAfactorloadings <- function(MOFArun, factor, omics, palette, number_features,
           legend.key.size = unit(0.5, "cm")) +
     guides(alpha = "none")
   return(p)}
+
+# Get top loadings for a given factor and view
+MOFAtoploadings <- function(MOFArun, factor, omics, number_features){
+  
+  # Get factor values
+  df <- get_weights(MOFArun, scale = FALSE)[[omics]]
+  filtered_df <- as.data.frame(df[ ,factor])
+  filtered_df$Feature <- rownames(filtered_df)
+  filtered_df <- filtered_df[order(abs(filtered_df[,1]), decreasing = TRUE), ]
+  colnames(filtered_df) <- c("Factor", "Feature")
+  
+  # Add direction
+  filtered_df$Direction <- ifelse(filtered_df$Factor < 0, "-", "+")
+  
+  # Select the top number_features and sort by value
+  filtered_df <- filtered_df[1:number_features, ]
+  filtered_df <- filtered_df[order(filtered_df$Factor), ]
+  
+  # Rename
+  filtered_df$Name <- sapply(strsplit(filtered_df$Feature, "_"), `[`, 1)
+  return(filtered_df)}
 
 # Plot MOFA values of a given factor with age
 MOFAplotAge <- function(MOFArun, factor, palette, title){
@@ -1217,7 +1238,7 @@ BoxplotBinaryMOFAfactor4groups <- function(MOFArun, factor, parameter, title, pa
 CorrelationNasalBlood <- function(mae, gene, title) {
   genedf <- data.frame("Nasal"=assays(mae)$Nasal[rownames(assays(mae)$Nasal) %in% gene,],
                        "Blood"=assays(mae)$Blood[rownames(assays(mae)$Blood) %in% gene,], "Group"=mae$Group)
-  cortest <- cor.test(genedf$Nasal, genedf$Blood)
+  cortest <- cor.test(genedf$Nasal, genedf$Blood, method="spearman")
   stars <- ifelse(cortest$p.value < 0.001, "***", ifelse(cortest$p.value < 0.01, "**", ifelse(cortest$p.value < 0.05, "*", "ns")))
   plot <- ggplot(genedf, aes(x = Nasal, y = Blood)) +
     geom_smooth(method = "lm", se = FALSE, color = "grey", size = 1) +
@@ -1227,12 +1248,54 @@ CorrelationNasalBlood <- function(mae, gene, title) {
     labs(x = paste("Nasal", gene, "(voom normalised)"), y = paste("Blood", gene, "(voom normalised)")) + 
     ggtitle(title) +
     annotate("text", x = min(genedf$Nasal), y = max(genedf$Blood),
-             label = paste0("Pearson correlation: ", round(cortest$estimate, 2), ", p-value: ", stars), hjust = 0, vjust = 1) +
+             label = paste0("Spearman rho: ", round(cortest$estimate, 2), ", p-value: ", stars), hjust = 0, vjust = 1) +
     theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12))
   return(plot)
 }
 
+# Gene expression with microbes
+CorrelationGeneBact <- function(mae, gene, bacteria, title) {
+  genedf <- data.frame("Nasal"=assays(mae)$Nasal[rownames(assays(mae)$Nasal) %in% gene,],
+                       "Bacteria"=assays(mae)$Bacteria[rownames(assays(mae)$Bacteria) %in% bacteria,], "Group"=mae$Group)
+  cortest <- cor.test(genedf$Nasal, genedf$Bacteria, method="spearman")
+  stars <- ifelse(cortest$p.value < 0.001, "***", ifelse(cortest$p.value < 0.01, "**", ifelse(cortest$p.value < 0.05, "*", "ns")))
+  plot <- ggplot(genedf, aes(x = Nasal, y = Bacteria)) +
+    geom_smooth(method = "lm", se = FALSE, color = "grey", size = 1) +
+    geom_point(aes(color = Group, fill = Group), size = 4, shape = 21, stroke = 0.25) +
+    scale_fill_manual(values = adjustcolor(custom_palette_2groups, alpha = 0.5)) +
+    scale_color_manual(values = adjustcolor(custom_palette_2groups, alpha = 1)) +
+    labs(x = paste("Nasal gene expression", gene, "(voom normalised)"), y = paste("Nasal bacteria abundance", bacteria, "(CLR normalised)")) + 
+    ggtitle(title) +
+    annotate("text", x = min(genedf$Nasal), y = max(genedf$Bacteria),
+             label = paste0("Spearman rho: ", round(cortest$estimate, 2), ", p-value: ", stars), hjust = 0, vjust = 1) +
+    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12))
+  return(plot)
+}
 
+# Gene expression with other genes
+CorrelationGeneGene <- function(mae, sample="Nasal", gene1, gene2, title) {
+  if (sample=="Nasal"){
+    genedf <- data.frame("Top_gene"=assays(mae)$Nasal[rownames(assays(mae)$Nasal) %in% gene1,],
+                         "Bottom_gene"=assays(mae)$Nasal[rownames(assays(mae)$Nasal) %in% gene2,], "Group"=mae$Group)
+  }
+  else if (sample=="Blood"){
+    genedf <- data.frame("Top_gene"=assays(mae)$Blood[rownames(assays(mae)$Blood) %in% gene1,],
+                         "Bottom_gene"=assays(mae)$Blood[rownames(assays(mae)$Blood) %in% gene2,], "Group"=mae$Group)
+  }
+  cortest <- cor.test(genedf$Top_gene, genedf$Bottom_gene, method="spearman")
+  stars <- ifelse(cortest$p.value < 0.001, "***", ifelse(cortest$p.value < 0.01, "**", ifelse(cortest$p.value < 0.05, "*", "ns")))
+  plot <- ggplot(genedf, aes(x = Top_gene, y = Bottom_gene)) +
+    geom_smooth(method = "lm", se = FALSE, color = "grey", size = 1) +
+    geom_point(aes(color = "#964091", fill = "#964091"), size = 4, shape = 21, stroke = 0.25) +
+    scale_fill_manual(values = adjustcolor("#964091", alpha = 0.5)) +
+    scale_color_manual(values = adjustcolor("#964091", alpha = 1)) +
+    labs(x = paste(gene1, "(voom normalised)"), y = paste(gene2, "(voom normalised)")) + 
+    ggtitle(title) +
+    annotate("text", x = min(genedf$Top_gene), y = max(genedf$Bottom_gene),
+             label = paste0("Spearman rho: ", round(cortest$estimate, 2), ", p-value: ", stars), hjust = 0, vjust = 1) +
+    theme(legend.position = "none", legend.box.background=element_rect(), text=element_text(size=12))
+  return(plot)
+}
 
 
 
