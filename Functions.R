@@ -3,7 +3,7 @@
 ###############################################################################################
 
 # Transform phyloseq object into dataframes
-SampleDataframe <- function(phylo) {return(as(sample_data(phylo), 'data.frame'))}
+SampleDataframe <- function(phylo) {return(as(phyloseq::sample_data(phylo), 'data.frame'))}
 OTUDataframe <- function(phylo) {return(as.matrix(data.frame(otu_table(phylo))))}
 
 # Add ASV name based on the highest taxonomic class 
@@ -93,8 +93,8 @@ PlotContaminants <- function(phylo, contam, title) {
   pa <- transform_sample_counts(phylo, function(abund) 1 * (abund > 0))
   
   # Subset the resulting object into two phyloseq objects: pa_neg containing negative control samples and pa_pos containing all other samples.
-  pa_neg <- prune_samples(sample_data(pa)$NegCtrl == TRUE, pa)
-  pa_pos <- prune_samples(sample_data(pa)$NegCtrl == FALSE, pa)
+  pa_neg <- prune_samples(phyloseq::sample_data(pa)$NegCtrl == TRUE, pa)
+  pa_pos <- prune_samples(phyloseq::sample_data(pa)$NegCtrl == FALSE, pa)
   
   # Create a data frame df_pa that contains the sum of taxonomic abundances for each sample type (positive and negative controls) and contaminant.
   df_pa <- data.frame(pa_pos = taxa_sums(pa_pos), pa_neg = taxa_sums(pa_neg), contaminant = contam$contaminant)
@@ -271,8 +271,8 @@ PlotOrdinationGroupUnifrac <- function(phylo, title, palette){
   ordi <- ordinate(phylo, 'PCoA', 'wunifrac')
   
   # Add PCoA1 and PCoA2 coordinates to sample data
-  sample_data(phylo)$PCoA1 <- ordi$vectors[,1]
-  sample_data(phylo)$PCoA2 <- ordi$vectors[,2]
+  phyloseq::sample_data(phylo)$PCoA1 <- ordi$vectors[,1]
+  phyloseq::sample_data(phylo)$PCoA2 <- ordi$vectors[,2]
   
   # Convert phyloseq object to a dataframe for plotting
   phylo <- SampleDataframe(phylo)
@@ -313,8 +313,8 @@ PlotOrdinationAge <- function(phylo, title, palette){
   
   # Perform ordination analysis and add the PCoA scores to the sample metadata
   ordi <- ordinate(phylo, 'PCoA', 'wunifrac')
-  sample_data(phylo)$PCoA1 <- ordi$vectors[,1]
-  sample_data(phylo)$PCoA2 <- ordi$vectors[,2]
+  phyloseq::sample_data(phylo)$PCoA1 <- ordi$vectors[,1]
+  phyloseq::sample_data(phylo)$PCoA2 <- ordi$vectors[,2]
   phylo <- SampleDataframe(phylo)
   
   # Define axis labels using the relative eigenvalues of the PCoA
@@ -351,13 +351,73 @@ PlotOrdinationAge <- function(phylo, title, palette){
   return(plot)
 }
 
+# Calculate distance transitions
+UnifracTimepoint <- function(phylo, title) {
+  
+  # Extract sample data and keep longitudinal samples with more than 2 timepoints
+  samples.data <- SampleDataframe(phylo)
+  keep.longitudinal <- names(which(rowSums(table(samples.data$Patient, samples.data$TimepointFactor)) > 2))
+  phylo <- prune_samples(phyloseq::sample_data(phylo)$Patient %in% keep.longitudinal, phylo)
+  
+  # Calculate distance matrix and prepare sample data for plotting
+  distance.matrix <- as.matrix(phyloseq::distance(phylo, 'wunifrac'))
+  samples.data <- SampleDataframe(phylo)
+  samples.data$barcode <- rownames(samples.data)
+  
+  # Create a data frame to store the pairwise distances between time points
+  transition.df <- data.frame(
+    'T1:1week-3months' = rep(NA, length(keep.longitudinal)),
+    'T2:3months-6months' = rep(NA, length(keep.longitudinal)),
+    'T3:6months-1year' = rep(NA, length(keep.longitudinal))
+  )
+  
+  # Add patient IDs and group information to the transition data frame
+  transition.df$Patient <- keep.longitudinal
+  transition.df$Group <- ifelse(
+    keep.longitudinal %in% samples.data[samples.data$Group == 'Yes',]$Patient == TRUE,
+    'Yes',
+    'No'
+  )
+  
+  # Loop through all longitudinal samples and calculate pairwise distances
+  for (i in 1:length(keep.longitudinal)) {
+    T1 <- samples.data$barcode[which(samples.data$Patient == keep.longitudinal[i] & samples.data$TimepointFactor == 'T1-1week')]
+    T2 <- samples.data$barcode[which(samples.data$Patient == keep.longitudinal[i] & samples.data$TimepointFactor == 'T2-3months')]
+    T3 <- samples.data$barcode[which(samples.data$Patient == keep.longitudinal[i] & samples.data$TimepointFactor == 'T3-6months')]
+    T4 <- samples.data$barcode[which(samples.data$Patient == keep.longitudinal[i] & samples.data$TimepointFactor == 'T4-1year')]
+    transition.df$T1.1week.3months[i] <- ifelse(
+      c(T1,T2) %in% colnames(distance.matrix),
+      distance.matrix[T1,T2],
+      NA
+    )
+    transition.df$T2.3months.6months[i] <- ifelse(
+      c(T2,T3) %in% colnames(distance.matrix),
+      distance.matrix[T2,T3],
+      NA
+    )
+    transition.df$T3.6months.1year[i] <- ifelse(
+      c(T3,T4) %in% colnames(distance.matrix),
+      distance.matrix[T3,T4],
+      NA
+    )
+  }
+  
+  # Melt the transition data frame to long format for plotting
+  transition.melt <- melt(transition.df)
+  
+  # Remove missing values from the data frame
+  transition.melt <- transition.melt[!is.na(transition.melt$value),]
+
+  # Return plot
+  return(transition.melt)}
+
 # Plot distance transitions
 PlotUnifracTimepoint <- function(phylo, title) {
   
   # Extract sample data and keep longitudinal samples with more than 2 timepoints
   samples.data <- SampleDataframe(phylo)
   keep.longitudinal <- names(which(rowSums(table(samples.data$Patient, samples.data$TimepointFactor)) > 2))
-  phylo <- prune_samples(sample_data(phylo)$Patient %in% keep.longitudinal, phylo)
+  phylo <- prune_samples(phyloseq::sample_data(phylo)$Patient %in% keep.longitudinal, phylo)
   
   # Calculate distance matrix and prepare sample data for plotting
   distance.matrix <- as.matrix(phyloseq::distance(phylo, 'wunifrac'))
@@ -408,7 +468,7 @@ PlotUnifracTimepoint <- function(phylo, title) {
   # Remove missing values from the data frame
   transition.melt <- transition.melt[!is.na(transition.melt$value),]
   
-  # PLot
+  # Plot
   plot <- ggplot(transition.melt, aes(x=variable, y=value, fill=variable, color=variable)) +
     geom_boxplot(aes(group = variable), fill = "white", color = "white", width = 0.5, outlier.shape = NA) +
     geom_boxplot(aes(group = variable), width = 0.5, outlier.shape = NA) +
@@ -438,7 +498,7 @@ ANOSIMunifrac <- function(phylo, design) {
   
   # Perform an ANOSIM test using the specified design and distance metric
   test <- adonis2(formula = as.formula(paste('phyloseq::distance(phylo, method = distance) ~', design)),
-                  data = as.data.frame(as.matrix(sample_data(phylo))), 
+                  data = as.data.frame(as.matrix(phyloseq::sample_data(phylo))), 
                   distance = distance, dfun = vegdist, na.action = na.omit)
   
   # Return the test results
@@ -456,7 +516,7 @@ ANOSIMunifrac <- function(phylo, design) {
   
   # Perform an ANOSIM test using the specified design and distance metric
   test <- adonis2(formula = as.formula(paste('phyloseq::distance(phylo, method = distance) ~', design)),
-                  data = as.data.frame(as.matrix(sample_data(phylo))), 
+                  data = as.data.frame(as.matrix(phyloseq::sample_data(phylo))), 
                   distance = distance, dfun = vegdist, na.action = na.omit)
   
   # Return the test results
@@ -465,7 +525,7 @@ ANOSIMunifrac <- function(phylo, design) {
 
 # DA testing with LINDA
 DAtesting <- function(phylo, variables, model, level) {
-  
+  require(phyloseq)
   # Remove samples with missing data in the specified parameter
   phylo <- ps_drop_incomplete(phylo, variables)
   
@@ -725,6 +785,49 @@ SelectIntoNumeric <- function(metadata, variables){
   return(metadata)
 }
 
+# Calculate distance between timepoints
+DistanceTimepoint <- function(se, title){
+  
+  # Get the sample metadata
+  samples.data <- se$targets
+  
+  # Keep only samples from patients with more than two timepoints
+  keep.longitudinal <- names(which(rowSums(table(samples.data$Patient, samples.data$TimepointFactor))>2))
+  se <- se[,se$targets$Patient %in% keep.longitudinal] 
+  
+  # Calculate the distance matrix between samples
+  distance.matrix <- as.matrix(dist(t(se$E), method='maximum'))
+  
+  # Add a "barcode" column to the metadata
+  samples.data$barcode <- rownames(samples.data)
+  
+  # Initialize a data frame to store the distance transitions
+  transition.df <- data.frame('T1:1week-3months'=rep(NA, length(keep.longitudinal)),
+                              'T2:3months-6months'=rep(NA, length(keep.longitudinal)),
+                              'T3:6months-1year'=rep(NA, length(keep.longitudinal)))
+  transition.df$Patient <- keep.longitudinal
+  
+  # Assign each patient to a "Group" based on whether they belong to a certain subgroup
+  transition.df$Group <- ifelse(keep.longitudinal %in% samples.data[samples.data$Group=='Yes',]$Patient==TRUE, 'Yes', 'No')
+  
+  # Loop over each patient and calculate the distances between their timepoints
+  for (i in 1:length(keep.longitudinal)) {
+    T1 <- samples.data$barcode[which(samples.data$Patient==keep.longitudinal[i] & samples.data$TimepointFactor=='T1-1week')]
+    T2 <- samples.data$barcode[which(samples.data$Patient==keep.longitudinal[i] & samples.data$TimepointFactor=='T2-3months')]
+    T3 <- samples.data$barcode[which(samples.data$Patient==keep.longitudinal[i] & samples.data$TimepointFactor=='T3-6months')]
+    T4 <- samples.data$barcode[which(samples.data$Patient==keep.longitudinal[i] & samples.data$TimepointFactor=='T4-1year')]
+    transition.df$T1.1week.3months[i] <- ifelse(c(T1,T2) %in% colnames(distance.matrix), distance.matrix[T1,T2], NA)
+    transition.df$T2.3months.6months[i] <- ifelse(c(T2,T3) %in% colnames(distance.matrix), distance.matrix[T2,T3], NA)
+    transition.df$T3.6months.1year[i] <- ifelse(c(T3,T4) %in% colnames(distance.matrix), distance.matrix[T3,T4], NA)
+  }
+  
+  # Melt the transition data frame to long format
+  transition.melt <- melt(transition.df)
+  
+  # Remove rows with missing values
+  transition.melt <- transition.melt[!is.na(transition.melt$value),]
+  return(transition.melt)}
+
 # Plot distance transitions
 PlotDistanceTimepoint <- function(se, title){
   
@@ -815,7 +918,16 @@ ImmunePathwayAnalysis <- function(DE_table){
   genes.downregulated <- DE_table[!is.na(DE_table$label) & DE_table$logFC<0,]$label
   genes.upregulated <- bitr(genes.upregulated, fromType='SYMBOL', toType='ENTREZID', OrgDb='org.Hs.eg.db')
   genes.downregulated <- bitr(genes.downregulated, fromType='SYMBOL', toType='ENTREZID', OrgDb='org.Hs.eg.db')
-    
+  convert_entrez_to_symbol <- function(entrez_string) {
+    entrez_ids <- strsplit(entrez_string, '/')[[1]]
+    tryCatch({
+      gene_symbols <- bitr(entrez_ids, fromType='ENTREZID', toType='SYMBOL', OrgDb='org.Hs.eg.db', drop=FALSE)
+      return(paste(gene_symbols$SYMBOL, collapse="/"))
+    }, error = function(e) {
+      return(NA)
+    })
+  }
+  
   # Run pathway analysis
   pathway.upregulated.KEGG <- as.data.frame(enrichKEGG(genes.upregulated$ENTREZID, pvalueCutoff = 0.05))
   if (nrow(pathway.upregulated.KEGG)>0) {
@@ -860,7 +972,11 @@ ImmunePathwayAnalysis <- function(DE_table){
                            pathway.upregulated.WP, pathway.downregulated.WP)
   
   # Just KEGG
+  pathway.upregulated.KEGG$Direction <- "Up"
+  pathway.downregulated.KEGG$Direction <- "Down"
   path.output.all <- rbind(pathway.upregulated.KEGG, pathway.downregulated.KEGG)
+  path.output.all$geneSymbol <- sapply(path.output.all$geneID, convert_entrez_to_symbol)
+  
   return(path.output.all)
 }
 
@@ -1158,6 +1274,26 @@ BoxplotBinaryMOFAfactor <- function(MOFArun, factor, parameter, title, palette, 
   
   # Return the plot
   return(plot)
+}
+
+# Return MOFA factors for a given parameter
+ReturnMOFAfactor2 <- function(MOFArun, factor, parameter, title, palette, paletteboxplot) {
+  
+  # Extract factor values and metadata information from the MOFA object
+  MOFA <- MOFArun
+  factorvalues <- get_factors(MOFA, factors = factor)
+  metadata <- MOFA@samples_metadata[parameter]
+  group <- MOFA@samples_metadata['Group']
+  
+  # Combine factor values, metadata information, and group information into a data frame
+  df <- cbind(factorvalues, metadata, group)
+  colnames(df) <- c('Factor', 'Parameter', 'Group')
+  
+  # Remove rows with missing values in the metadata column
+  df.complete <- df[df$Parameter != 'NA', ]
+  
+  # Return the plot
+  return(df.complete)
 }
 
 # MOFA boxplot 4 groups

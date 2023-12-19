@@ -91,6 +91,9 @@ custom_palette_age <- c("pink", "plum3", "plum4", "#66475A")
 custom_palette_microbes <- c("gold2","#D69F3DFF","#825716FF")
 custom_palette_omics1 <- c("pink3","gold2","#D69F3DFF","#825716FF")
 custom_palette_omics2 <- c("pink3","#C83D43FF","gold2","#D69F3DFF","#825716FF")
+
+# Get versions of packages
+packageVersion() 
 ```
 
 # [Metadata]{.underline}
@@ -597,7 +600,13 @@ healthy individuals.
 (fung.Observed.age <- BoxplotMetadataAge(fung.long, "Observed", "LoCo : Nasal fungal richness with age", "Age (months)", "Observed richness (log)", custom_palette_age))
 (vir.Observed.age <- BoxplotMetadataAge(vir.long, "Observed", "LoCo : Nasal viral richness with age", "Age (months)", "Observed richness (log)", custom_palette_age))
 
-# Statistics
+# Statistics diversity
+bact.Shannon.lm <- lm(SampleDataframe(bact.long)$Shannon ~ SampleDataframe(bact.long)$TimepointMonth)
+summary(bact.Shannon.lm)
+fung.Shannon.lm <- lm(SampleDataframe(fung.long)$Shannon ~ SampleDataframe(fung.long)$TimepointMonth)
+summary(fung.Shannon.lm)
+
+# Statistics richness 
 bact.Observed.lm <- lm(SampleDataframe(bact.long)$Observed ~ SampleDataframe(bact.long)$TimepointMonth)
 summary(bact.Observed.lm)
 fung.Observed.lm <- lm(SampleDataframe(fung.long)$Observed ~ SampleDataframe(fung.long)$TimepointMonth)
@@ -682,7 +691,10 @@ ggsave("../Figures/Individual/Long_Beta_diversity.pdf",
 
 ```{r eval=T, warning=F, cache=T}
 (bact.long.distance <- PlotUnifracTimepoint(bact.logCSS.long,  "LoCo: Bacterial paired sample distance"))
+wilcox.test(UnifracTimepoint(bact.logCSS.long)$value[UnifracTimepoint(bact.logCSS.long)$variable %in% c("T1.1week.3months", "T2.3months.6months")] ~ UnifracTimepoint(bact.logCSS.long)$variable[UnifracTimepoint(bact.logCSS.long)$variable %in% c("T1.1week.3months", "T2.3months.6months")])
+
 (fung.long.distance <- PlotUnifracTimepoint(fung.logCSS.long, "LoCo: Fungal paired sample distance"))
+wilcox.test(UnifracTimepoint(fung.logCSS.long)$value[UnifracTimepoint(fung.logCSS.long)$variable %in% c("T1.1week.3months", "T2.3months.6months")] ~ UnifracTimepoint(fung.logCSS.long)$variable[UnifracTimepoint(fung.logCSS.long)$variable %in% c("T1.1week.3months", "T2.3months.6months")])
 ```
 
 #### 4) ANOSIM
@@ -704,7 +716,6 @@ sort(table(as.data.frame(fung.long.age.meco$res_diff[fung.long.age.meco$res_diff
 # Barplot with top results
 (bact.long.age.bar <- DAtestingPlotBar(bact.long.age.meco, "T4-1year - T1-1week", c(custom_palette_age[1], custom_palette_age[4]), 20, "LoCo : Nasal bacterial DA features with age"))
 ```
-
 
 ### MICROBIOME COVARIATES INVESTIGATION
 
@@ -772,9 +783,11 @@ sample_data(vir.1Y)$AnyVirus <- ifelse(sample_sums(vir.1Y)==0, "No Virus", ifels
 
 (alpha.bact.abx <- BoxplotMetadataParameters(bact.1Y, "Observed", "AbxSinceBorn1YEARSimplified", "MaCo : Nasal bacterial richness with antibiotics treatments in the first year",
                                               "Observed (log)", c(scales::alpha(custom_palette_microbes[1], 0.65), custom_palette_microbes[1]), c(scales::alpha(custom_palette_microbes[1], 0.7), custom_palette_microbes[1])))
+wilcox.test(sample_data(bact.1Y)$Observed ~ sample_data(bact.1Y)$AbxSinceBorn1YEARSimplified)
 
 (alpha.bact.daycare <- BoxplotMetadataParameters(bact.1Y, "Observed", "DayCare1YEAR", "MaCo : Bacterial Nasal richness with daycare attendance",
                                               "Observed (log)", c(scales::alpha(custom_palette_microbes[1], 0.65), custom_palette_microbes[1]), c(scales::alpha(custom_palette_microbes[1], 0.7), custom_palette_microbes[1])))
+wilcox.test(sample_data(bact.1Y)$Observed ~ sample_data(bact.1Y)$DayCare1YEAR)
 
 (alpha.bact.siblings <- BoxplotMetadataParameters(bact.1Y, "Observed", "NbSiblingsSimplified", "MaCo : Nasal bacterial richness with siblings number",
                                               "Observed (log)", c(scales::alpha(custom_palette_microbes[1], 0.65), custom_palette_microbes[1]), c(scales::alpha(custom_palette_microbes[1], 0.7), custom_palette_microbes[1])))
@@ -796,7 +809,9 @@ fung.season$Season <- as.factor(fung.season$Season)
 (alpha.vir.daycare <- plotanyViruses(vir.1Y, "DayCare1YEAR", "MaCo : Nasal viral richness with daycare attendance"))
 prop.test(table(sample_data(vir.1Y)$AnyVirus, sample_data(vir.1Y)$DayCare1YEAR))
 (alpha.vir.abx <- plotanyViruses(vir.1Y, "AbxSinceBorn1YEARSimplified", "MaCo : Nasal viral richness with antibiotics treatments in the first year"))
+cor.test(sample_data(vir.1Y)$Observed, sample_data(vir.1Y)$AbxSinceBorn1YEAR, method = "spearman")
 (alpha.vir.abxpregnancy <- plotanyViruses(vir.1Y, "AbxCoursesPregnancySimplified", "MaCo : Nasal viral richness with antibiotics during pregnancy"))
+cor.test(sample_data(vir.1Y)$Observed, sample_data(vir.1Y)$AbxCoursesPregnancy, method = "spearman")
 (alpha.vir.delivery <- plotanyViruses(vir.1Y, "DeliverySimplified", "MaCo : Nasal viral richness with delivery mode"))
 prop.test(table(sample_data(vir.1Y)$AnyVirus, sample_data(vir.1Y)$DeliverySimplified))
 ```
@@ -1239,6 +1254,9 @@ rownames(metaS) <- paste0("S", metaS$Subjectnumber)
 
 # Keep metadata of interest
 metaS.subset <- metaS[, colnames(metaS) %in% c(covariates.all, "Timepoint", "Group", "HaemoStatus", "DayCareGroup", "Wheeze3years")]
+
+# Time of first wheezing episode
+summary(metadata$WheezeStartMonth)
 ```
 
 #### 2) Gene expression data import
@@ -1391,6 +1409,7 @@ adonis2(formula = as.matrix(dist(t(host.nasal.long$E), method='maximum')) ~ Time
 
 ```{r eval=T, warning=F, cache=T}
 (host.long.distance <- PlotDistanceTimepoint(host.nasal.long,  "LoCo: Nasal host gene expression paired sample distance"))
+wilcox.test(DistanceTimepoint(host.nasal.long)$value[DistanceTimepoint(host.nasal.long)$variable %in% c("T1.1week.3months", "T2.3months.6months")] ~ DistanceTimepoint(host.nasal.long)$variable[DistanceTimepoint(host.nasal.long)$variable %in% c("T1.1week.3months", "T2.3months.6months")])
 ```
 
 #### 3) Differential gene expression analysis
@@ -1436,6 +1455,9 @@ write.xlsx(DE_Age, "../Outputs/Age_DE_results.xlsx", row.names=FALSE)
 ```{r eval=T, warning=F, cache=T}
 immune.pathway.age <- ImmunePathwayAnalysis(DE_Age)
 plot.immune.pathway.age <- PlotImmunePathways(immune.pathway.age, palette = c(custom_palette_age[1], custom_palette_age[3]), number_pathways = 20, min_genecounts = 4, title = "LoCo: Nasal host immune pathways with age")
+
+# Save pathway analysis results
+write.xlsx(immune.pathway.age, "../Outputs/Longitudinal_immune_pathways.xlsx", row.names=FALSE)
 ```
 
 ### HOST COVARIATES INVESTIGATION
@@ -1600,6 +1622,10 @@ write.xlsx(DE_Group_blood, "../Outputs/Group_DE_blood_results.xlsx", row.names=F
 
 ```{r}
 immune.pathway.disease <- ImmunePathwayAnalysis(DE_Group_nasal)
+
+# Save pathway analysis results
+write.xlsx(immune.pathway.disease, "../Outputs/Group_immune_pathways.xlsx", row.names=FALSE)
+
 (immune.pathway.disease.plot <- PlotImmunePathways(immune.pathway.disease, palette = custom_palette_2groups[2], number_pathways = 2, min_genecounts = 2, title = "MaCo : Nasal host immune pathways with wheeze (adjusted for sex)"))
 ```
 
@@ -1826,10 +1852,22 @@ ntop <- 10
 (plot.data.overview <- plot_data_overview(MOFAobject, colors = custom_palette_omics2, covariate = "Bacteria") +
    theme(legend.position = c(1, 0), legend.box.background=element_rect(), text=element_text(size=12)))
 (plot.MOFA.var <- MOFAvarianceexplained(MOFArun, custom_palette_omics2, title = "MaCo : MOFA variance explained"))
+MOFArun@cache$variance_explained
+MOFArun@cache$variance_explained$r2_per_factor
 
 # Plot factor value with group
 (plot.factor1.group <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "Group", "Latent Factor1", custom_palette_2groups, custom_palette_2groups))
 (plot.factor1.daycare <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "DayCare1YEAR", "Latent Factor1", custom_palette_2groups, c("grey", "grey")))
+
+# Stats for Factor1 values
+factor1.values <- ReturnMOFAfactor2(MOFArun, "Factor1", "DayCare1YEAR", "Latent Factor1")
+factor1.values.wheeze <- factor1.values[factor1.values$Group == "Yes",]
+factor1.values.ctrl <- factor1.values[factor1.values$Group == "No",]
+wilcox.test(factor1.values$Factor ~ factor1.values$Parameter)
+wilcox.test(factor1.values.wheeze$Factor ~ factor1.values.wheeze$Parameter)
+wilcox.test(factor1.values.ctrl$Factor ~ factor1.values.ctrl$Parameter)
+
+# Plota
 (plot.factor1.daycaregroup <- BoxplotBinaryMOFAfactor4groups(MOFArun, "Factor1", "DayCareGroup", "Latent Factor1", custom_palette_2groups, c(rep(custom_palette_2groups[1],2), rep(custom_palette_2groups[2],2))))
 
 (plot.factor1.3yearwheeze <- BoxplotBinaryMOFAfactor(MOFArun, "Factor1", "Wheeze3years", "Latent Factor1", custom_palette_2groups, custom_palette_2groups))
@@ -1842,8 +1880,8 @@ ntop <- 10
 (plot.factor2.daycaregroup <- BoxplotBinaryMOFAfactor4groups(MOFArun, "Factor2", "DayCareGroup", "Latent Factor1", custom_palette_2groups, c(rep(custom_palette_2groups[1],2), rep(custom_palette_2groups[2],2))))
 
 # Plot factor 1 top features
-(plot.factor1.nasal.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Nasal", custom_palette_2groups, ntop, "MaCo : Nasal host Factor1 MOFA loadings"))
-(plot.factor1.blood.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Blood", custom_palette_2groups, ntop, "MaCo : Blood host Factor1 MOFA loadings"))
+(plot.factor1.nasal.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Nasal", custom_palette_2groups[2], ntop, "MaCo : Nasal host Factor1 MOFA loadings"))
+(plot.factor1.blood.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Blood", custom_palette_2groups[2], ntop, "MaCo : Blood host Factor1 MOFA loadings"))
 (plot.factor1.bact.loadings <- MOFAfactorloadings(MOFArun, "Factor1", "Bacteria", custom_palette_2groups, ntop, "MaCo : Nasal bacteria Factor1 MOFA loadings"))
 ```
 
@@ -1862,7 +1900,7 @@ ggsave("../Figures/Individual/Venn.pdf", common.Venn, width=10, height=10, units
 
 #### 7) Monocytes markers
 
-```{r eval = F}
+```{r eval = T}
 # Check whether some of the markers are found
 rownames(Host.matrix.nasal)[grep("SEL", rownames(Host.matrix.nasal))]
 
@@ -2002,10 +2040,12 @@ HCLA_data_nose@meta.data$ann_level_2.2 <- ifelse(HCLA_data_nose@meta.data$ann_le
 (allcells.ann2.umap <- DimPlot(HCLA_data_nose, group.by = "ann_level_2.2", label = TRUE, repel = TRUE, label.size = 5, raster = FALSE,
                                cols = custom_palette_singlecell1) +
     labs(title = "HCLA core : nasal tissue cells") +
-    theme(axis.text.x=element_blank(), legend.position = "none", axis.text.y=element_blank(), axis.ticks=element_blank(),
+    theme(axis.text.x=element_blank(), 
+          #legend.position = "none", 
+          axis.text.y=element_blank(), axis.ticks=element_blank(),
           legend.box.background=element_rect(), text=element_text(size=12)))
 
-#ggsave("../Figures/Individual/Single_cell_general_annotation.pdf", allcells.ann2.umap, width=20, height=20, units="cm", useDingbats=FALSE)
+ggsave("../Figures/Individual/Single_cell_general_annotation.pdf", allcells.ann2.umap, width=20, height=20, units="cm", useDingbats=FALSE)
 
 # List of genes of interest
 common.genes <- c("ACVR1C", "AQP9", "OSM", "TNFSF13B")
@@ -2041,8 +2081,9 @@ HCLA_data_nose_myeloid@meta.data$seurat_clusters_manual <- ifelse(HCLA_data_nose
                              reduction = "umap", cols = custom_palette_singlecell2) +
     labs(title = "HCLA core : nasal myeloid cells") +
     theme(axis.text.x=element_blank(), axis.text.y=element_blank(), axis.ticks=element_blank(),
-          legend.position = "none", 
+          #legend.position = "none", 
           legend.box.background=element_rect(), text=element_text(size=12)))
+ggsave("../Figures/Individual/Single_cell_myeloid_annotation.pdf", myeloid.anno.umap, width=20, height=20, units="cm", useDingbats=FALSE)
 
 # Create dotplots for common genes
 (myeloid.anno.dotplot <- DotPlot(HCLA_data_nose_myeloid, features = common.genes, dot.min = 0, group.by = "seurat_clusters_manual", dot.scale = 20,
@@ -2092,7 +2133,7 @@ label.size <- 20
 
 (plot4 <- ggarrange(plot.volcano.Age, NA, plot.immune.pathway.age, NA, bact.long.age.bar, 
                     ncol = 5, nrow = 1, align = "hv",
-                    widths = c(1.25, 0.2, 1, 0.2, 1),
+                    widths = c(1.25, 0.2, 1.5, 0.2, 1.25),
                     labels = c("k","", "l", "", "m"),
                     font.label = list(size=label.size)))
 
@@ -2214,7 +2255,7 @@ myeloid.anno.umap <- readRDS("../Figures/Individual/myeloid.anno.umap.rds")
 myeloid.anno.dotplot <- readRDS("../Figures/Individual/myeloid.anno.dotplot.rds")
 ```
 
-```{r eval=T, warning=F, cache=T}
+```{r eval=F, warning=F, cache=T}
 # Set size
 label.size <- 20
 
@@ -2233,31 +2274,31 @@ label.size <- 20
 
 (plot3 <- ggarrange(allcells.ann2.umap, NA, allcells.ann2.dotplot,
                     ncol = 3, nrow = 1, align = "hv",
-                    widths = c(1, 0.25, 2),
+                    widths = c(1, 0.25, 1.5),
                     labels = c("g","","h"),
                     font.label = list(size=label.size)))
 
 (plot4 <- ggarrange(myeloid.anno.umap, NA, myeloid.anno.dotplot,
                     ncol = 3, nrow = 1, align = "hv",
-                    widths = c(1, 0.25, 2),
-                    labels = c("g","","h"),
+                    widths = c(1, 0.25, 1.5),
+                    labels = c("i","","j"),
                     font.label = list(size=label.size)))
 
 (plot5 <- ggarrange(CCR2.ACVR1C.plot, NA, CCR2.AQP9.plot, CCR2.OSM.plot, NA, CCR2.TNFSF13B.plot,
                     ncol = 3, nrow = 2, align = "hv",
                     widths = c(1, 0.25, 1),
-                    labels = c("j","","k", "l", "", "m"),
+                    labels = c("l","","m", "n", "", "o"),
                     font.label = list(size=label.size)))
 
 (plot6 <- ggarrange(nasal.monocytes.cor, NA, plot5,
                     ncol = 3, nrow = 1, align = "hv",
                     widths = c(1, 0.25, 2),
-                    labels = c("i","", ""),
+                    labels = c("k","", ""),
                     font.label = list(size=label.size)))
 
 Figure5 <- ggarrange(plot1, NA, plot2, NA, plot3, NA, plot4, NA, plot6,
                      ncol = 1, nrow = 9, align = "hv",
-                     heights = c(1, 0.1, 1, 0.1, 1, 0.1, 1, 0.1, 1.5),
+                     heights = c(1, 0.1, 1, 0.1, 1.5, 0.1, 1.5, 0.1, 1.5),
                      font.label = list(size=label.size))
 # Save figure
 ggsave("../Figures/Main/Figure5.pdf", Figure5, width=35, height=60, units="cm", useDingbats=FALSE)
