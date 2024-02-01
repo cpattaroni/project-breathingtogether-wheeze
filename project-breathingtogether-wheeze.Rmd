@@ -91,9 +91,6 @@ custom_palette_age <- c("pink", "plum3", "plum4", "#66475A")
 custom_palette_microbes <- c("gold2","#D69F3DFF","#825716FF")
 custom_palette_omics1 <- c("pink3","gold2","#D69F3DFF","#825716FF")
 custom_palette_omics2 <- c("pink3","#C83D43FF","gold2","#D69F3DFF","#825716FF")
-
-# Get versions of packages
-packageVersion() 
 ```
 
 # [Metadata]{.underline}
@@ -1902,17 +1899,15 @@ ggsave("../Figures/Individual/Venn.pdf", common.Venn, width=10, height=10, units
 
 ```{r eval = T}
 # Check whether some of the markers are found
-rownames(Host.matrix.nasal)[grep("SEL", rownames(Host.matrix.nasal))]
+rownames(Host.matrix.nasal)[grep("RANTES", rownames(Host.matrix.nasal))]
 
 # Set up human monocytes markers
-human.monocytes.classical <- c("CD14", "CCR2", "CCL2", "FCGR1A") 
-human.monocytes.intermediate <- c("CCR5") 
-human.monocytes.nonclassical <- c("FCGR3A", "CX3CR1",  "HLA-DRA")
-human.monocytes.markers <- c(human.monocytes.classical, human.monocytes.intermediate, human.monocytes.nonclassical)
-human.monocytes.markers <- c(human.monocytes.classical)
-# "FCGR1A" is CD64
-# CD16 is FCGR3A
-# Look if CCR2 and CD36 are detected
+human.monocytes.markers <- c("CD14", "FCGR1A", "FCGR3A", "TNFRSF1A", "TNFRSF1B", "CCR2", "CX3CR1", "CCR5", "HLA-DRB1", "CCL3", "CCL2", "CCL7", "CX3CL1") 
+#human.monocytes.markers <- c(human.monocytes.classical, human.monocytes.intermediate, human.monocytes.nonclassical)
+# FCGR1A is CD64
+# FCGR3A is CD16
+# CD62L (SELL) not detected
+# CCL4 amd CCL5 not detected
 
 # Extract gene expression matrices
 nasal.common.genes <- as.matrix(t(Host.matrix.nasal[rownames(Host.matrix.nasal) %in% common.nasal.blood, ]))
@@ -1924,14 +1919,16 @@ blood.monocytes.genes <- blood.monocytes.genes[,match(human.monocytes.markers, c
 
 # Perform correlation analyses
 nasal.monocytes.cor <- psych::corr.test(nasal.common.genes, nasal.monocytes.genes, method="spearman", adjust="fdr")
-(nasal.monocytes.cor <- ggcorrplot(nasal.monocytes.cor$r, method = "circle", p.mat = nasal.monocytes.cor$p.adj, 
+nasal.monocytes.cor$r <- ifelse(nasal.monocytes.cor$r<0, 0, nasal.monocytes.cor$r)
+(nasal.monocytes.cor <- ggcorrplot(t(nasal.monocytes.cor$r), method = "circle", p.mat = t(nasal.monocytes.cor$p.adj), 
            insig = "blank",  outline.color = "black", show.diag = TRUE, 
            tl.srt = 90, colors = c("goldenrod3", "white", "#964091")) + 
   labs(title = "Correlations with monocytes markers"))
 ggsave("../Figures/Individual/Monocytes_markers.pdf", width=30, height=10, units="cm", useDingbats=FALSE)
 
-blood.monocytes.cor <- psych::corr.test(blood.common.genes, blood.monocytes.genes, method="spearman", adjust="none")
-(blood.monocytes.cor <- ggcorrplot(blood.monocytes.cor$r, method = "circle", p.mat = blood.monocytes.cor$p.adj, 
+blood.monocytes.cor <- psych::corr.test(blood.common.genes, blood.monocytes.genes, method="spearman", adjust="fdr")
+blood.monocytes.cor$r <- ifelse(blood.monocytes.cor$r<0, 0, blood.monocytes.cor$r)
+(blood.monocytes.cor <- ggcorrplot(t(blood.monocytes.cor$r), method = "circle", p.mat = t(blood.monocytes.cor$p.adj), 
            insig = "blank",  outline.color = "black", show.diag = TRUE, 
            tl.srt = 90, colors = c("goldenrod3", "white", "#964091")) + 
   labs(title = "Host blood common local-systemic genes with human circulating monocytes markers"))
