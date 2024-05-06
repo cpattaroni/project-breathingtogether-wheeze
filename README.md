@@ -8,7 +8,7 @@ This repository contains the R code and documentation for the manuscript entitle
 
 - `Functions.R`: This script includes custom R functions utilized in the main R Markdown file. These functions facilitate data manipulation, perform statistical tests, and generate plots specific to our data.
 
-## Versions
+## Version
 
 May 6, 2024
 
