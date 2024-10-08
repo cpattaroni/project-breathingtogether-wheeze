@@ -1,6 +1,6 @@
 # Breathing Together wheeze project
 
-This repository contains the R code and documentation for the manuscript entitled _" Children who have wheezed in early life exhibit bacterial, not fungal or viral, dysbiosis and a systemic monocyte immune signature"_. The analysis integrates multi-omics data to explore host-microbial interactions in the context of wheeze in early-life.
+This repository contains the R code and documentation for the manuscript entitled _"Children who have wheezed in early life exhibit bacterial, not fungal or viral, dysbiosis and a systemic monocyte immune signature"_. The analysis integrates multi-omics data to explore host-microbial interactions in the context of wheeze in early-life.
 
 ## Contents
 
